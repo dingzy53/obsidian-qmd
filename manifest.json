@@ -1,0 +1,10 @@
+{
+	"id": "qmd-search",
+	"name": "QMD Search",
+	"version": "2.0.0",
+	"minAppVersion": "1.8.0",
+	"description": "Search your vault with its own qmd index: hybrid keyword and semantic search, deep search and related notes.",
+	"author": "Ding",
+	"authorUrl": "https://github.com/dingzy53",
+	"isDesktopOnly": true
+}

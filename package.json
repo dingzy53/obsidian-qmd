@@ -1,0 +1,41 @@
+{
+  "name": "qmd-search",
+  "version": "2.0.0",
+  "description": "Search your vault's own qmd index from Obsidian: fast hybrid search, deep search, related notes.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
+    "deploy": "npm run build && node scripts/deploy.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "qmd",
+    "search",
+    "bm25",
+    "vector",
+    "semantic-search"
+  ],
+  "author": "Ding",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.21.5",
+    "obsidian": "^1.8.0",
+    "tslib": "^2.6.3",
+    "typescript": "^5.4.5",
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dingzy53/obsidian-qmd.git"
+  }
+}

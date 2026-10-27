@@ -1,0 +1,417 @@
+/* ==========================================================================
+   Obsidian QMD
+   One compact result row shared by the search modal, the search panel and
+   the related-notes panel. Theme variables only, so light and dark both work.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Pane (query box, folder filter, status line, results)
+   -------------------------------------------------------------------------- */
+.workspace-leaf-content .view-content.qmd-view {
+	padding: 0;
+	overflow: hidden;
+}
+
+.qmd-pane {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.qmd-input-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 8px 8px 4px;
+}
+
+.qmd-input-row input.qmd-query {
+	flex: 1;
+	min-width: 0;
+}
+
+.qmd-filter-row {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0 8px 6px 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.qmd-filter-icon {
+	display: inline-flex;
+	color: var(--text-faint);
+}
+
+.qmd-filter-icon svg,
+.qmd-folder-clear svg {
+	width: 14px;
+	height: 14px;
+}
+
+.qmd-filter-row input.qmd-folder {
+	flex: 1 1 0;
+	min-width: 0;
+	height: 22px;
+	padding: 0 4px;
+	font-size: var(--font-ui-smaller);
+	border: none;
+	background: transparent;
+	box-shadow: none;
+}
+
+.qmd-filter-row input.qmd-folder:focus {
+	box-shadow: none;
+}
+
+.qmd-filter-row .qmd-folder-clear {
+	padding: 2px;
+}
+
+.qmd-filter-row input.qmd-folder:placeholder-shown + .qmd-folder-clear {
+	display: none;
+}
+
+.qmd-status-text {
+	flex: 0 1 auto;
+	margin-left: auto;
+	text-align: right;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.qmd-status-text.is-warning {
+	color: var(--text-warning);
+}
+
+.qmd-status-text.is-error {
+	color: var(--text-error);
+	white-space: normal;
+}
+
+/* --------------------------------------------------------------------------
+   Result rows
+   -------------------------------------------------------------------------- */
+.qmd-results {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+/* In a sidebar the status bar floats over the bottom edge; let the last row scroll clear of it. */
+.qmd-view .qmd-results {
+	padding-bottom: var(--size-4-8);
+}
+
+.qmd-row {
+	padding: 6px 10px 7px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+}
+
+.qmd-row:hover,
+.qmd-row.is-selected {
+	background-color: var(--background-modifier-hover);
+}
+
+.qmd-row-title,
+.qmd-row-path,
+.qmd-row-heading {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.qmd-row-title {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.qmd-row-path {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.qmd-row-heading {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-accent);
+}
+
+.qmd-row.is-stale {
+	cursor: default;
+}
+
+.qmd-row.is-stale .qmd-row-title {
+	color: var(--text-faint);
+	text-decoration: line-through;
+}
+
+/* The excerpt is clamped; the fade only shows when it actually overflows. */
+.qmd-row-snippet {
+	max-height: 6.4em;
+	margin-top: 2px;
+	overflow: hidden;
+	font-size: var(--font-ui-smaller);
+	line-height: 1.45;
+	color: var(--text-muted);
+	pointer-events: none;
+	overflow-wrap: anywhere;
+	-webkit-mask-image: linear-gradient(to bottom, #000 5.2em, transparent 6.4em);
+	mask-image: linear-gradient(to bottom, #000 5.2em, transparent 6.4em);
+}
+
+.qmd-row-snippet > :first-child {
+	margin-top: 0;
+}
+
+.qmd-row-snippet > :last-child {
+	margin-bottom: 0;
+}
+
+.qmd-row-snippet p,
+.qmd-row-snippet ul,
+.qmd-row-snippet ol,
+.qmd-row-snippet pre,
+.qmd-row-snippet table,
+.qmd-row-snippet .math-block {
+	margin-block: 0 2px;
+}
+
+.qmd-row-snippet ul,
+.qmd-row-snippet ol {
+	padding-inline-start: 1.5em;
+}
+
+/* The row is the click target, so links inside an excerpt read as plain text. */
+.qmd-row .qmd-row-snippet a {
+	padding: 0;
+	color: var(--text-normal);
+	text-decoration: none;
+	background: none;
+}
+
+.qmd-row-snippet strong {
+	color: var(--text-normal);
+}
+
+.qmd-row-snippet mjx-container[display='true'] {
+	margin: 2px 0 !important;
+	text-align: left !important;
+}
+
+.qmd-row-snippet pre {
+	padding: 2px 6px;
+	white-space: pre-wrap;
+}
+
+.qmd-row-snippet code {
+	font-size: 0.9em;
+}
+
+.qmd-row-snippet img,
+.qmd-row-snippet iframe,
+.qmd-row-snippet .internal-embed,
+.qmd-row-snippet .copy-code-button,
+.qmd-row-snippet .collapse-indicator,
+.qmd-row-snippet .list-collapse-indicator {
+	display: none;
+}
+
+.qmd-empty {
+	padding: 18px 10px;
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Recent searches
+   -------------------------------------------------------------------------- */
+.qmd-history-label {
+	padding: 8px 10px 2px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.qmd-history-item {
+	padding: 4px 10px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	cursor: pointer;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.qmd-history-item:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* --------------------------------------------------------------------------
+   Quick-search modal
+   -------------------------------------------------------------------------- */
+.modal.qmd-modal {
+	width: min(760px, 92vw);
+	max-height: 82vh;
+	padding: 0;
+	overflow: hidden;
+}
+
+.qmd-modal .modal-header,
+.qmd-modal .modal-header-button,
+.qmd-modal .modal-close-button {
+	display: none;
+}
+
+.qmd-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	max-height: 82vh;
+	margin: 0;
+	padding: 0;
+}
+
+.qmd-modal .qmd-pane {
+	flex: 1;
+	height: auto;
+}
+
+.qmd-modal .qmd-input-row {
+	padding: 6px 10px 2px;
+}
+
+.qmd-modal .qmd-input-row input.qmd-query {
+	height: 40px;
+	padding: 0 4px;
+	font-size: var(--font-ui-medium);
+	border: none;
+	background: transparent;
+	box-shadow: none;
+}
+
+.qmd-modal .qmd-filter-row {
+	padding-inline: 14px 12px;
+}
+
+.qmd-modal .qmd-row,
+.qmd-modal .qmd-history-item,
+.qmd-modal .qmd-history-label {
+	padding-inline: 14px;
+}
+
+/* In the modal the highlight follows the keyboard selection, not the pointer. */
+.qmd-modal .qmd-row:hover:not(.is-selected) {
+	background-color: transparent;
+}
+
+.qmd-instructions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 14px;
+	padding: 6px 14px;
+	border-top: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.qmd-instruction-key {
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Related notes
+   -------------------------------------------------------------------------- */
+.qmd-related-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 6px 6px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.qmd-related-title {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   Status bar
+   -------------------------------------------------------------------------- */
+.status-bar-item.qmd-statusbar {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.qmd-status-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background-color: var(--text-faint);
+}
+
+.qmd-status-dot.is-ready {
+	background-color: var(--color-green);
+}
+
+.qmd-status-dot.is-busy {
+	background-color: var(--color-yellow);
+	animation: qmd-pulse 1.2s ease-in-out infinite;
+}
+
+.qmd-status-dot.is-error {
+	background-color: var(--color-red);
+}
+
+@keyframes qmd-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.qmd-status-dot.is-busy {
+		animation: none;
+	}
+}
+
+/* --------------------------------------------------------------------------
+   Settings
+   -------------------------------------------------------------------------- */
+.qmd-settings-info {
+	padding: 2px 0 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	user-select: text;
+}
+
+.qmd-settings-info.is-error {
+	color: var(--text-error);
+}
+
+.qmd-settings-log {
+	margin-top: 8px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.qmd-settings-log pre {
+	max-height: 220px;
+	overflow: auto;
+	user-select: text;
+}
