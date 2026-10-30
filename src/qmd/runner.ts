@@ -12,8 +12,10 @@ export interface QmdStatus {
 	updated: string;
 }
 
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*[A-Za-z]`, 'g');
+
 export function stripAnsi(text: string): string {
-	return text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+	return text.replace(ANSI_ESCAPE, '');
 }
 
 function samePath(a: string, b: string): boolean {
@@ -112,7 +114,10 @@ export class QmdRunner {
 				lookupArgs = ['--host', 'which', 'qmd'];
 			}
 			const stdout = await new Promise<string>((resolve, reject) => {
-				execFile(lookupBin, lookupArgs, { timeout: 3000 }, (error, out) => (error ? reject(error) : resolve(out)));
+				execFile(lookupBin, lookupArgs, { timeout: 3000 }, (error, out) => {
+					if (error) reject(new Error(error.message));
+					else resolve(out);
+				});
 			});
 			const found = stdout.split(/\r?\n/)[0]?.trim();
 			if (found) {
@@ -133,6 +138,10 @@ export class QmdRunner {
 		}
 		const binary = await this.resolveBinary();
 		const dir = this.projectDir;
+		// Node starts .cmd/.bat files only through a shell, which would interpret the query text.
+		if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(binary)) {
+			throw new Error(`Cannot start ${binary}: set "Path to qmd" to a .exe file.`);
+		}
 
 		if (this.isFlatpak()) {
 			// The sandbox environment is not forwarded to the host, and --directory alone
@@ -163,7 +172,11 @@ export class QmdRunner {
 
 	/** Run a qmd command to completion and return its stdout. Aborting or timing out stops the process. */
 	async exec(args: string[], opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string> {
-		const aborted = () => Object.assign(new Error('qmd command aborted'), { name: 'AbortError' });
+		const aborted = () => {
+			const e = new Error('qmd command aborted');
+			e.name = 'AbortError';
+			return e;
+		};
 		if (opts.signal?.aborted) throw aborted();
 		const child = await this.spawn(args);
 		return new Promise<string>((resolve, reject) => {

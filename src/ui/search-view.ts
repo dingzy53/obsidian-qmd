@@ -2,7 +2,7 @@ import { HoverParent, HoverPopover, ItemView, ViewStateResult, WorkspaceLeaf } f
 import type QmdPlugin from '../main';
 import { SearchPane } from './search-pane';
 
-export const VIEW_TYPE_SEARCH = 'qmd-search-view';
+export const VIEW_TYPE_SEARCH = 'qmd-vault-search-view';
 
 interface SearchViewState {
 	query?: string;
@@ -24,7 +24,7 @@ export class QmdSearchView extends ItemView implements HoverParent {
 	}
 
 	getDisplayText(): string {
-		return 'QMD search';
+		return 'Vault search';
 	}
 
 	getIcon(): string {

@@ -119,7 +119,7 @@ export class QmdIndexer {
 				return;
 			}
 			this.message = e instanceof Error ? e.message : String(e);
-			console.error('[qmd-search] index refresh failed:', e);
+			console.error('[qmd-vault-search] index refresh failed:', e);
 			this.setState('error');
 		}
 	}

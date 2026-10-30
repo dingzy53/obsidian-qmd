@@ -37,9 +37,9 @@ export default class QmdPlugin extends Plugin {
 
 		this.registerView(VIEW_TYPE_SEARCH, (leaf) => new QmdSearchView(leaf, this));
 		this.registerView(VIEW_TYPE_RELATED, (leaf) => new QmdRelatedView(leaf, this));
-		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'QMD Search', defaultMod: false });
+		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'QMD Vault Search', defaultMod: false });
 
-		this.addRibbonIcon('sparkles', 'QMD search', () => void this.openSearchView());
+		this.addRibbonIcon('sparkles', 'Open vault search', () => void this.openSearchView());
 
 		this.addCommand({
 			id: 'search',
@@ -117,7 +117,8 @@ export default class QmdPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const saved = (await this.loadData()) as Partial<QmdSettings> | null;
+		this.settings = { ...DEFAULT_SETTINGS, ...saved };
 	}
 
 	async saveSettings(reconfigure = false): Promise<void> {
@@ -143,7 +144,7 @@ export default class QmdPlugin extends Plugin {
 	private async updateIndex(): Promise<void> {
 		await this.indexer.run();
 		const failed = this.indexer.state === 'error';
-		new Notice(`QMD index ${failed ? 'refresh failed: ' : 'refreshed: '}${this.indexer.message}`, failed ? 10000 : 4000);
+		new Notice(`Index ${failed ? 'refresh failed: ' : 'refreshed: '}${this.indexer.message}`, failed ? 10000 : 4000);
 	}
 
 	refreshStatus(): void {

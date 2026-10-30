@@ -18,7 +18,7 @@ type Block = { start: number; end: number; kind: 'math' | 'fence' };
 
 /** For every line inside a `$$ … $$` or fenced block, the block it belongs to. */
 function findBlocks(lines: string[]): (Block | undefined)[] {
-	const owner: (Block | undefined)[] = new Array(lines.length);
+	const owner = new Array<Block | undefined>(lines.length);
 	const close = (start: number, end: number, kind: Block['kind']) => {
 		const block = { start, end, kind };
 		for (let i = start; i <= end; i++) owner[i] = block;

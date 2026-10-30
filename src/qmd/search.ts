@@ -107,7 +107,7 @@ export class QmdSearch {
 				results = this.finish(raw, true, opts.folder, limit);
 			} catch (e) {
 				if (isAbort(e)) throw e;
-				console.warn('[qmd-search] server search failed, using keyword search:', e);
+				console.warn('[qmd-vault-search] server search failed, using keyword search:', e);
 				degraded = true;
 			}
 		}
@@ -209,11 +209,11 @@ export class QmdSearch {
 		const absolute = path.resolve(root, inCollection);
 		const relative = path.relative(this.vaultPath, absolute).split(path.sep).join('/');
 		const inVault = !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-		const file = inVault ? this.app.vault.getAbstractFileByPath(relative) : null;
+		const file = inVault ? this.app.vault.getFileByPath(relative) : null;
 		const snippet = cleanSnippet(raw.snippet);
 
 		return {
-			file: file instanceof TFile ? file : null,
+			file,
 			path: inVault ? relative : absolute,
 			line: raw.line ?? 0,
 			title: raw.title ?? '',
@@ -256,7 +256,7 @@ export class QmdSearch {
 				}
 			}
 		} catch (e) {
-			console.warn('[qmd-search] could not read the qmd config:', e);
+			console.warn('[qmd-vault-search] could not read the qmd config:', e);
 		}
 		return (this.roots = roots);
 	}

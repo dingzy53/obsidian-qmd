@@ -393,14 +393,7 @@
 /* --------------------------------------------------------------------------
    Settings
    -------------------------------------------------------------------------- */
-.qmd-settings-info {
-	padding: 2px 0 10px;
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-	user-select: text;
-}
-
-.qmd-settings-info.is-error {
+.qmd-settings-error .setting-item-description {
 	color: var(--text-error);
 }
 

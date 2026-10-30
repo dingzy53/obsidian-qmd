@@ -3,7 +3,7 @@ import type QmdPlugin from '../main';
 import { isAbort } from '../types';
 import { ResultList } from './result-list';
 
-export const VIEW_TYPE_RELATED = 'qmd-related-view';
+export const VIEW_TYPE_RELATED = 'qmd-vault-related-view';
 
 /** Notes semantically close to the note you are on; follows the active note. */
 export class QmdRelatedView extends ItemView implements HoverParent {
@@ -25,7 +25,7 @@ export class QmdRelatedView extends ItemView implements HoverParent {
 	}
 
 	getDisplayText(): string {
-		return 'QMD related notes';
+		return 'Related notes';
 	}
 
 	getIcon(): string {

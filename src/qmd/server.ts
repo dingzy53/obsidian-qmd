@@ -205,7 +205,7 @@ export class QmdServer {
 					try {
 						resolve(JSON.parse(text) as T);
 					} catch (e) {
-						reject(e);
+						reject(e instanceof Error ? e : new Error(String(e)));
 					}
 				});
 			});

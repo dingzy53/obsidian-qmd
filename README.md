@@ -1,10 +1,10 @@
-# QMD Search
+# QMD Vault Search
 
 An [Obsidian](https://obsidian.md) desktop plugin that searches your vault with its own **[QMD](https://github.com/tobi/qmd)** index: fast keyword + semantic search, LLM-expanded deep search on demand, and a related-notes panel. No runtime dependencies.
 
 ## Requirements
 
-- Obsidian 1.8.0 or newer, desktop only.
+- Obsidian 1.13.0 or newer, desktop only. Tested on Linux (Flatpak and native); macOS and Windows are untested.
 - [qmd](https://github.com/tobi/qmd) installed, with an index created inside the vault (`qmd init` in the vault folder).
 
 ## Installation
@@ -12,8 +12,10 @@ An [Obsidian](https://obsidian.md) desktop plugin that searches your vault with 
 **From a release**
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/dingzy53/obsidian-qmd/releases/latest).
-2. Put them in `<vault>/.obsidian/plugins/qmd-search/`.
-3. Reload Obsidian and enable **QMD Search** under *Settings → Community plugins*.
+2. Put them in `<vault>/.obsidian/plugins/qmd-vault-search/` (`.obsidian` is your vault's configuration folder).
+3. Reload Obsidian and enable **QMD Vault Search** under *Settings → Community plugins*.
+
+**Upgrading from the `qmd-search` or `obsidian-qmd` folder:** the plugin ID is now `qmd-vault-search`. Copy `data.json` from the old plugin folder into the new one to keep your settings, then delete the old folder.
 
 **With BRAT:** add `dingzy53/obsidian-qmd`.
 
@@ -31,8 +33,8 @@ An [Obsidian](https://obsidian.md) desktop plugin that searches your vault with 
 
 | Surface | Open with | What it does |
 |---|---|---|
-| Quick search | command **QMD Search: Search** (assign a hotkey) | Type to search; results update as you type. |
-| Search panel | ribbon icon ✨ or **Open search panel** | The same search in the right sidebar; results stay while you work. |
+| Quick search | command **QMD Vault Search: Search** (assign a hotkey) | Type to search; results update as you type. |
+| Vault search panel | ribbon icon ✨ or **Open search panel** | The same search in the right sidebar; results stay while you work. |
 | Related notes | **Open related notes** | Notes semantically close to the note you are on. Follows the active note. |
 | Selection | **Search selected text** | Sends the selection to the search panel. |
 
@@ -44,8 +46,8 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 |---|---|
 | ↑ / ↓ | Move through results (↑ on an empty box recalls the last query) |
 | Enter | Open the note at the match and flash it |
-| Ctrl+Enter | Open in a new tab |
-| Ctrl+Alt+Enter | Open to the right |
+| Ctrl/Cmd+Enter | Open in a new tab |
+| Ctrl/Cmd+Alt+Enter | Open to the right |
 | Shift+Enter | Deep search: rerun with LLM query expansion (about 15–20 s on CPU) |
 | Alt+Enter | Insert a link to the result at the cursor |
 
@@ -61,17 +63,19 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 
 | Setting | Default | Notes |
 |---|---|---|
-| Index location | vault root | Folder that contains `.qmd`. |
-| qmd binary | auto-detect | |
-| Refresh when Obsidian starts | on | |
+| Index location | vault root | Folder that contains `.qmd`. The row below it shows the index status. |
+| Path to qmd | auto-detect | |
+| Refresh at startup | on | |
 | Refresh daily | on, 04:00 | First chance after that hour while Obsidian is open. |
 | Embed changed notes | on | Runs `qmd embed` after an update that changed something. |
-| Keep a qmd server running | on | Off = keyword search only. |
+| Keep a qmd server running | on | Off = keyword search only. Status, log and port show while it is on. |
 | Port | 8421 | The next five are tried if it is taken. |
 | Search results | 20 | Up to 40. |
 | Related notes shown | 10 | |
-| Hover preview delay | 2000 ms | Sidebar panels. Ctrl-hover previews at once. |
-| Rerank in deep search | off | Minutes without a dedicated GPU. |
+| Hover preview delay | 2 s | Sidebar panels. Ctrl/Cmd-hover previews at once. |
+| Rerank deep search | off | Minutes without a dedicated GPU. Shows *Rerank candidates* when on. |
+
+All settings appear in Obsidian's settings search.
 
 ---
 
@@ -81,12 +85,12 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 npm install
 npm run dev      # watch build
 npm run build    # type-check and bundle to main.js
-npm run lint
+npm run lint     # the same eslint-plugin-obsidianmd rules the community-plugin review runs
 npm test
-QMD_PLUGIN_DIR=<vault>/.obsidian/plugins/qmd-search npm run deploy   # build and copy into a vault
+QMD_PLUGIN_DIR=<vault>/.obsidian/plugins/qmd-vault-search npm run deploy   # build and copy into a vault
 ```
 
-Then reload the plugin: `obsidian plugin:reload id=qmd-search`. See [AGENTS.md](AGENTS.md) for design notes.
+Then reload the plugin: `obsidian plugin:reload id=qmd-vault-search`. See [AGENTS.md](AGENTS.md) for design notes.
 
 ## Releasing
 
@@ -96,6 +100,14 @@ git push --follow-tags
 ```
 
 The tag triggers the Release workflow, which lints, tests, builds and attaches `main.js`, `manifest.json` and `styles.css` to a GitHub release.
+
+---
+
+## Disclosures
+
+- **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
+- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- No telemetry, ads, accounts or payments.
 
 ---
 

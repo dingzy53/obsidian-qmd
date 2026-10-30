@@ -15,7 +15,7 @@ import { QmdResult } from '../types';
 import { insertIntoEditor, linkTo, openAtMatch } from '../utils';
 import { buildExcerpt, cachedExcerpt, Excerpt, renderExcerpt } from './snippet';
 
-export const HOVER_SOURCE = 'qmd-search';
+export const HOVER_SOURCE = 'qmd-vault-search';
 
 export interface ResultListHost {
 	app: App;
@@ -32,8 +32,8 @@ export interface ResultListHost {
 
 /** Obsidian's internal drag source, so a dragged row behaves like a dragged file. */
 interface DragManager {
-	dragFile(evt: globalThis.DragEvent, file: TFile): unknown;
-	onDragStart(evt: globalThis.DragEvent, data: unknown): void;
+	dragFile(evt: DragEvent, file: TFile): unknown;
+	onDragStart(evt: DragEvent, data: unknown): void;
 }
 
 /**
@@ -106,7 +106,7 @@ export class ResultList {
 				if (generation !== this.generation) return;
 				snippetEl.replaceChildren(...Array.from(node.childNodes));
 			} catch (e) {
-				console.warn('[qmd-search] could not render excerpt:', e);
+				console.warn('[qmd-vault-search] could not render excerpt:', e);
 			}
 		}
 	}
@@ -242,7 +242,7 @@ export class ResultList {
 			})
 		);
 		menu.addItem((item) =>
-			item.setTitle('Insert link at cursor').setIcon('text-cursor-input').onClick(() => this.insertLink(result))
+			item.setTitle('Insert link into note').setIcon('text-cursor-input').onClick(() => this.insertLink(result))
 		);
 		menu.addSeparator();
 		app.workspace.trigger('file-menu', menu, file, HOVER_SOURCE);

@@ -4,7 +4,7 @@ import { join } from "path";
 
 const target = process.env.QMD_PLUGIN_DIR;
 if (!target) {
-	console.error("Set QMD_PLUGIN_DIR to <vault>/.obsidian/plugins/qmd-search");
+	process.stderr.write("Set QMD_PLUGIN_DIR to the plugin folder: <vault>/<config folder>/plugins/qmd-vault-search\n");
 	process.exit(1);
 }
 
@@ -12,4 +12,4 @@ mkdirSync(target, { recursive: true });
 for (const file of ["main.js", "manifest.json", "styles.css"]) {
 	copyFileSync(file, join(target, file));
 }
-console.log(`Deployed to ${target}`);
+process.stdout.write(`Deployed to ${target}\n`);

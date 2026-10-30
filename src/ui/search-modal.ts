@@ -1,14 +1,17 @@
-import { Component, Modal } from 'obsidian';
+import { Component, Modal, Platform } from 'obsidian';
 import type QmdPlugin from '../main';
 import { SearchPane } from './search-pane';
+
+const MOD = Platform.isMacOS ? '⌘' : 'ctrl';
+const ALT = Platform.isMacOS ? '⌥' : 'alt';
 
 const KEYS: [string, string][] = [
 	['↑↓', 'navigate'],
 	['↵', 'open'],
-	['ctrl ↵', 'new tab'],
-	['ctrl alt ↵', 'split'],
+	[`${MOD} ↵`, 'new tab'],
+	[`${MOD} ${ALT} ↵`, 'split'],
 	['shift ↵', 'deep search'],
-	['alt ↵', 'insert link'],
+	[`${ALT} ↵`, 'insert link'],
 	['esc', 'close'],
 ];
 

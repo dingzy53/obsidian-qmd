@@ -1,4 +1,4 @@
-# QMD Search (`qmd-search`)
+# QMD Vault Search (`qmd-vault-search`)
 
 An Obsidian desktop plugin that searches the vault's own **QMD** index. Developed and tested on Linux with the Flatpak build of Obsidian; the plain (non-Flatpak) spawn path is kept but untested.
 
@@ -65,6 +65,11 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 - `qmd update` prints `Indexed: N new, M updated, U unchanged, R removed` and, when vectors are missing, `(N unique hashes need vectors)`. `QmdIndexer` parses both.
 - SQLite runs in WAL mode with a 120 s busy timeout, so the server and an index job can overlap. The server is restarted after a job that changed something, which also checkpoints the WAL into `index.sqlite` (the vault tracks that file in git).
 
+**Directory and settings**
+- ID `qmd-vault-search`, name "QMD Vault Search": `qmd-search` (achekulaev/obsidian-qmd) and the name "QMD Search" (id `qmd`) are taken in the community directory. View types are prefixed `qmd-vault-` for the same reason.
+- `minAppVersion` 1.13.0: the settings tab is declarative (`getSettingDefinitions()`, no `display()`), so settings appear in Obsidian's settings search. `setControlValue` saves and restarts the server for the keys in `RECONFIGURE`; rows that depend on a toggle use `visible` and are refreshed with `refreshDomState()`.
+- UI strings must pass `obsidianmd/ui/sentence-case`, which lowercases unknown acronyms: write "qmd" mid-sentence and never start a UI string with "QMD".
+
 **Obsidian internals used (feature-detected)**
 - `editor.addHighlights(ranges, 'is-flashing', true, true)` / `removeHighlights` for the flash.
 - `app.dragManager.dragFile` / `onDragStart` for dragging a row as a file.
@@ -75,7 +80,7 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 ## 4. Workflow
 
 - `npm run build` — type-check (`tsc --noEmit`) and bundle.
-- `npm run lint`, `npm test` — eslint; vitest for the pure query/snippet helpers (`obsidian` is stubbed in `test/obsidian-stub.ts`).
-- `npm run deploy` — build and copy into the vault (`QMD_PLUGIN_DIR` overrides the target).
-- Reload in the running app: `obsidian plugin:reload id=qmd-search`. Inspect with `obsidian eval code="app.plugins.plugins['qmd-search']…"`, `obsidian dev:errors`, `obsidian dev:screenshot path=<file under $HOME>` (the sandbox has its own `/tmp`).
+- `npm run lint`, `npm test` — eslint with `eslint-plugin-obsidianmd` recommended, the rule set the community-plugin review runs (keep it at 0 errors and 0 warnings; no `eslint-disable` comments, the review rejects them); vitest for the pure query/snippet helpers (`obsidian` is stubbed in `test/obsidian-stub.ts`).
+- `npm run deploy` — build and copy into the vault (`QMD_PLUGIN_DIR` sets the target).
+- Reload in the running app: `obsidian plugin:reload id=qmd-vault-search`. Inspect with `obsidian eval code="app.plugins.plugins['qmd-vault-search']…"`, `obsidian dev:errors`, `obsidian dev:screenshot path=<file under $HOME>` (the sandbox has its own `/tmp`).
 - After any change to process handling, check that exactly one `qmd.js mcp --http` process exists after a reload, a restart and a disable.
