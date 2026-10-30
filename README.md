@@ -49,7 +49,7 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 | Shift+Enter | Deep search: rerun with LLM query expansion (about 15–20 s on CPU) |
 | Alt+Enter | Insert a link to the result at the cursor |
 
-**Mouse:** click opens, Ctrl-click or middle-click opens a new tab, hover shows a page preview, right-click gives a menu, and a row can be dragged into a note to make a link.
+**Mouse:** click opens, Ctrl-click or middle-click opens a new tab, resting on a row in a sidebar panel shows a page preview (after about 2 s, or at once with Ctrl held), right-click gives a menu, and a row can be dragged into a note to make a link.
 
 **Query syntax:** `"exact phrase"` and `-excluded` work for the keyword half of the search. **Folder filter:** type a folder in the field under the search box.
 
@@ -70,6 +70,7 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 | Port | 8421 | The next five are tried if it is taken. |
 | Search results | 20 | Up to 40. |
 | Related notes shown | 10 | |
+| Hover preview delay | 2000 ms | Sidebar panels. Ctrl-hover previews at once. |
 | Rerank in deep search | off | Minutes without a dedicated GPU. |
 
 ---

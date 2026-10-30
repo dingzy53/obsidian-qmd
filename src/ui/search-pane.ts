@@ -67,6 +67,7 @@ export class SearchPane {
 				app: plugin.app,
 				component: opts.component,
 				hoverParent: opts.hoverParent,
+				hoverDelay: () => plugin.settings.hoverDelayMs,
 				onOpen: () => {
 					plugin.remember(this.query);
 					opts.onChoose?.();

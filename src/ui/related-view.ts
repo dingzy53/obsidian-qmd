@@ -49,6 +49,7 @@ export class QmdRelatedView extends ItemView implements HoverParent {
 				app: this.app,
 				component: this,
 				hoverParent: this,
+				hoverDelay: () => this.plugin.settings.hoverDelayMs,
 				onUpdateIndex: () => void this.plugin.indexer.run(),
 			},
 			root.createDiv()

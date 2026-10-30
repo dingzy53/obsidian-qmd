@@ -23,6 +23,8 @@ export interface ResultListHost {
 	component: Component;
 	/** Set for sidebar views to enable hover page preview. */
 	hoverParent?: HoverParent;
+	/** Milliseconds to wait before the hover preview opens. */
+	hoverDelay?: () => number;
 	/** Called just before a result is opened (the modal closes itself here). */
 	onOpen?: (result: QmdResult) => void;
 	onUpdateIndex: () => void;
@@ -44,9 +46,11 @@ export class ResultList {
 	private excerpts = new Map<QmdResult, Excerpt>();
 	private index = -1;
 	private generation = 0;
+	private hoverTimer: number | null = null;
 
 	constructor(private host: ResultListHost, readonly el: HTMLElement, private autoSelect = false) {
 		el.addClass('qmd-results');
+		host.component.register(() => this.cancelHover());
 	}
 
 	get size(): number {
@@ -60,6 +64,7 @@ export class ResultList {
 		const excerpts = await Promise.all(results.map((r) => buildExcerpt(app, r).catch(() => null)));
 		if (generation !== this.generation) return;
 
+		this.cancelHover();
 		this.results = results;
 		this.excerpts = new Map();
 		this.rows = [];
@@ -109,6 +114,7 @@ export class ResultList {
 	/** Show a plain message instead of rows. */
 	message(text: string): void {
 		this.generation++;
+		this.cancelHover();
 		this.results = [];
 		this.rows = [];
 		this.index = -1;
@@ -146,27 +152,49 @@ export class ResultList {
 			if (evt.button === 1) void this.open(result, 'tab');
 		};
 		row.oncontextmenu = (evt) => this.showMenu(evt, result, file);
-		row.onmousemove = () => {
-			if (this.autoSelect) this.select(this.rows.indexOf(row), false);
-		};
-
+		// The page preview waits until the pointer rests on a row, so sweeping
+		// across the list does not open a popover on every row. Ctrl/Cmd skips the wait.
 		const hoverParent = this.host.hoverParent;
+		let lastEvent: MouseEvent | null = null;
+		const preview = (event: MouseEvent) => {
+			if (!hoverParent) return;
+			this.cancelHover();
+			this.host.app.workspace.trigger('hover-link', {
+				event,
+				source: HOVER_SOURCE,
+				hoverParent,
+				targetEl: row,
+				linktext: file.path,
+				sourcePath: '',
+				state: { scroll: excerpt?.matchLine ?? Math.max(0, result.line - 1) },
+			});
+		};
+		row.onmousemove = (evt) => {
+			if (this.autoSelect) this.select(this.rows.indexOf(row), false);
+			lastEvent = evt;
+			if (this.hoverTimer !== null && Keymap.isModEvent(evt)) preview(evt);
+		};
 		if (hoverParent) {
-			row.onmouseover = (event) => {
-				this.host.app.workspace.trigger('hover-link', {
-					event,
-					source: HOVER_SOURCE,
-					hoverParent,
-					targetEl: row,
-					linktext: file.path,
-					sourcePath: '',
-					state: { scroll: excerpt?.matchLine ?? Math.max(0, result.line - 1) },
-				});
+			row.onmouseenter = (evt) => {
+				this.cancelHover();
+				lastEvent = evt;
+				const delay = this.host.hoverDelay?.() ?? 0;
+				if (delay <= 0 || Keymap.isModEvent(evt)) {
+					preview(evt);
+					return;
+				}
+				this.hoverTimer = window.setTimeout(() => {
+					this.hoverTimer = null;
+					if (lastEvent && row.isConnected) preview(lastEvent);
+				}, delay);
 			};
+			row.onmouseleave = () => this.cancelHover();
+			row.onmousedown = () => this.cancelHover();
 		}
 
 		row.draggable = true;
 		row.ondragstart = (evt) => {
+			this.cancelHover();
 			const dragManager = (this.host.app as App & { dragManager?: DragManager }).dragManager;
 			if (dragManager?.dragFile && dragManager?.onDragStart) {
 				dragManager.onDragStart(evt, dragManager.dragFile(evt, file));
@@ -175,6 +203,11 @@ export class ResultList {
 			}
 		};
 		return snippetEl;
+	}
+
+	private cancelHover(): void {
+		if (this.hoverTimer !== null) window.clearTimeout(this.hoverTimer);
+		this.hoverTimer = null;
 	}
 
 	/** Headings such as "Continuity of $f(x)$" would otherwise show raw LaTeX. */

@@ -68,7 +68,7 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 **Obsidian internals used (feature-detected)**
 - `editor.addHighlights(ranges, 'is-flashing', true, true)` / `removeHighlights` for the flash.
 - `app.dragManager.dragFile` / `onDragStart` for dragging a row as a file.
-- `workspace.trigger('hover-link', …)` with a registered hover source for page preview.
+- `workspace.trigger('hover-link', …)` with a registered hover source for page preview. `ResultList` delays the trigger itself (`mouseenter` + timer, `hoverDelayMs`, Ctrl/Cmd skips it): Obsidian's own wait is too short for a dense list, and `mouseover` would re-fire on every child element.
 
 ---
 

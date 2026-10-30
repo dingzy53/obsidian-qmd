@@ -182,6 +182,22 @@ export class QmdSettingTab extends PluginSettingTab {
 		);
 
 		new Setting(containerEl)
+			.setName('Hover preview delay')
+			.setDesc(
+				'In the sidebar panels, how long to rest on a result before its preview opens, in milliseconds. Hold Ctrl (Cmd on macOS) to preview at once.'
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 5000, 250)
+					.setValue(settings.hoverDelayMs)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						settings.hoverDelayMs = value;
+						await plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName('Rerank in deep search')
 			.setDesc('Let the LLM reorder deep-search results. Can take minutes without a dedicated GPU.')
 			.addToggle((toggle) =>
