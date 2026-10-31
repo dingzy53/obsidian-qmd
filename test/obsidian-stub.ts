@@ -2,3 +2,4 @@
 export class TFile {}
 export class Plugin {}
 export class Notice {}
+export { parse as parseYaml } from "yaml";

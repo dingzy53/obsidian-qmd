@@ -1,77 +1,165 @@
-# Delay the hover page preview in the sidebar panels
+# Exclude folders from the qmd index
 
 ## Context
 
-In the right sidebar (the **search panel** and the **related-notes panel**), moving the mouse over a result row opens Obsidian's page preview almost straight away. If you're just moving the pointer across the list, popovers keep opening over the notes. The goal is for a preview to appear only after the pointer has rested on one row for a moment: 2 s by default, adjustable in settings. Holding Ctrl/Cmd still shows the preview straight away, as it does everywhere else in Obsidian.
+The plugin indexes everything the collection's glob matches. The only way to leave a folder out today is to hand-edit `.qmd/index.yml`. This adds an **Excluded folders** list in settings and a folder right-click item.
 
-**Cause** (`src/ui/result-list.ts:153-165`): `fillRow()` sets `row.onmouseover`, which triggers `workspace.trigger('hover-link', …)` straight away. `mouseover` bubbles, so it fires again every time the pointer crosses a child element (title, folder, heading, snippet, math). The hover source is registered with `defaultMod: false` in `src/main.ts:40`, so no modifier key is needed. The only wait is Obsidian's own short internal delay.
+Decisions from the user:
+- Excluding a folder soft-removes its notes (`qmd update` only).
+- The plugin then shows a short warning that the text stays in the index.
+- A manual **Purge** button removes it.
 
-The quick-search modal has no `hoverParent`, so it isn't affected and stays the same.
+What testing and reading the code established (qmd 2.8.3):
 
-## Steps
+| Fact | Consequence |
+|---|---|
+| `collections.<name>.ignore` is the only mechanism. It is YAML-only, with no CLI command. | The plugin has to edit `index.yml`. |
+| A terminal `qmd update` reads only the YAML. | `index.yml` is the **single source of truth**. Nothing goes in `data.json`, or running qmd by hand would undo the exclusion. |
+| `ignore` is not in the `qmd trust` gated set (hooks, paths, models). | Editing it doesn't re-arm trust. |
+| `qmd update` deactivates any document the glob no longer returns and counts it as `removed`. | The existing `removed > 0` path already restarts the server. |
+| Deactivated notes leave keyword and vector results, but their text and vectors stay until `qmd cleanup`. ANN takes `limit * 3` candidates *before* filtering on `active = 1`. | Unpurged vectors thin out vector results. This is what the warning is about. |
+| `cleanup` also clears the LLM cache and runs VACUUM. | Purge stops the server first and restarts it after. |
+| `Archive (old)/**` silently matches nothing. The escaped form matched for 11 tricky names under fast-glob's micromatch and 13 under picomatch (`getIgnoredLookupMatch`). | Folder names must be escaped the way `fg.escapePath` does. |
+| The Math vault already has `Z - Template/**`, `99 - Assets/**`, `.obsidian/**`, `*.aux`, `*.dvi`, `*.log`, and the file is git-tracked. | Edit only the `ignore:` block. Never rewrite the whole file. Keep non-folder rules untouched. |
 
-### 0. Branch and PLAN.md
-- `git switch -c feat/hover-preview-delay` (from `main`; the tree is clean).
-- Write `PLAN.md` at the repo root with the content of this plan: context, design, file changes and verification. Leave it uncommitted, like the code, until the user asks for a commit.
+Obsidian API: the design uses only APIs available in 1.13.0, so `minAppVersion` stays. `type: 'list'` is unchanged in 1.14.4 (the only new control is `secret`). Avoid group `search` (1.13.1). `tab.update()` re-renders the open page (checked on the live 1.14.5 app). `refreshDomState()` does not change structure.
 
-### 1. Setting: `src/types.ts`
-- Add `hoverDelayMs: number; // wait before showing the page preview in the sidebar; 0 = Obsidian's default` to `QmdSettings`.
-- Add `hoverDelayMs: 2000` to `DEFAULT_SETTINGS`. Existing installs pick it up through the `Object.assign` in `loadSettings`.
+## Step 0: Branch
 
-### 2. Settings UI: `src/settings.ts`, *Search* section
-Add a slider, following the existing `Search results` and `Rerank candidates` sliders:
-```ts
-new Setting(containerEl)
-	.setName('Hover preview delay')
-	.setDesc('In the sidebar panels, how long to rest on a result before its preview opens, in milliseconds. Hold Ctrl (Cmd on macOS) to preview at once.')
-	.addSlider((slider) =>
-		slider.setLimits(0, 5000, 250).setValue(settings.hoverDelayMs).setDynamicTooltip()
-			.onChange(async (value) => { settings.hoverDelayMs = value; await plugin.saveSettings(); })
-	);
-```
-`saveSettings()` without `true` is correct here: the server doesn't need a restart.
+Plan mode blocked this, so it runs first once the plan is approved:
 
-### 3. Hosts pass the delay: `ResultListHost`
-- `src/ui/result-list.ts`: add `/** Milliseconds to wait before the hover preview opens. */ hoverDelay?: () => number;` to `ResultListHost`. It's a getter, so a change in settings applies right away without re-rendering.
-- `src/ui/search-pane.ts` (~line 66): pass `hoverDelay: () => plugin.settings.hoverDelayMs` when building the `ResultList`.
-- `src/ui/related-view.ts` (~line 48): pass `hoverDelay: () => this.plugin.settings.hoverDelayMs`.
+- `git switch -c feat/exclude-folders` from clean `main`.
+- Replace `PLAN.md` with this plan, as the earlier feature branch did. Leave it uncommitted until asked.
 
-### 4. Delayed trigger: `src/ui/result-list.ts`
-Add one pending timer per list, since only one row can be under the pointer at a time:
-```ts
-private hoverTimer: number | null = null;
+## Step 1: Spike on a scratch project (no code)
 
-private cancelHover(): void {
-	if (this.hoverTimer !== null) window.clearTimeout(this.hoverTimer);
-	this.hoverTimer = null;
-}
-```
-In `fillRow()`, replace the `onmouseover` block:
-- Build the `hover-link` payload in a small local `preview(event: MouseEvent)` function (same fields as now: `event`, `source`, `hoverParent`, `targetEl: row`, `linktext`, `sourcePath`, `state.scroll`).
-- `row.onmouseenter = (evt)`: `cancelHover()`. If `Keymap.isModEvent(evt)` or the delay is 0, call `preview(evt)` straight away. Otherwise start `window.setTimeout(() => { this.hoverTimer = null; preview(lastEvent); }, delay)`.
-  - `mouseenter` doesn't bubble, so crossing child elements no longer re-triggers the preview.
-- Keep the latest pointer event for the timer callback. Extend the existing `row.onmousemove` handler with `lastEvent = evt` so the popover is placed where the pointer is now, not where it entered. If Ctrl/Cmd is pressed while waiting (`Keymap.isModEvent(evt)` on mousemove), cancel the timer and preview straight away.
-- `row.onmouseleave`, `row.onmousedown` and the existing `row.ondragstart`: call `cancelHover()`. Clicking or dragging a row should never open a preview afterwards.
-- Also call `cancelHover()` at the top of `set()` and `message()`, since the rows are replaced and their `mouseleave` may never fire. In the constructor, add `host.component.register(() => this.cancelHover())` so closing the panel can't leave a timer behind.
-- Leave `HOVER_SOURCE` and the `registerHoverLinkSource` call in `src/main.ts` unchanged. Users who want Ctrl-only previews can still set that under *Settings → Page preview → QMD Search*.
+In a throwaway `qmd init` project, confirm with qmd itself:
 
-### 5. Docs
-- `README.md`: change the Mouse line to "hover (about 2 s, or at once with Ctrl) shows a page preview". Add a settings table row: `| Hover preview delay | 2000 ms | Sidebar panels; Ctrl-hover previews at once. |`.
-- `AGENTS.md` §3, *Obsidian internals used*: add to the `hover-link` bullet that the plugin delays it itself (`mouseenter` + timer, `hoverDelayMs`), because Obsidian's own delay is too short for a dense list.
+1. Add an `ignore` entry, then `qmd update`: it prints `N removed`.
+2. Remove the entry, then `qmd update`: the notes return as `new` with no re-embedding.
+3. Exclude, `qmd cleanup`, re-include: `(N unique hashes need vectors)` appears, so the existing embed step picks them up.
+4. A folder named `Archive (old)` is excluded by its escaped pattern.
+5. `qmd status` prints `Orphaned: N` in the form the parser will expect.
 
-## Files touched
-`src/types.ts`, `src/settings.ts`, `src/ui/result-list.ts`, `src/ui/search-pane.ts`, `src/ui/related-view.ts`, `README.md`, `AGENTS.md`, new `PLAN.md`.
+If any of these differs, stop and revise the plan. Record confirmed facts in `AGENTS.md` §3.
+
+## Step 2: `src/qmd/config.ts` (new)
+
+Pure helpers, tested in vitest:
+- `folderPattern(rel)`: escapes with `/[\\()*?[\]{}|]|^!|[!+@](?=\()/g` (matched `fg.escapePath` for all 11 test names) and appends `/**`.
+- `patternFolder(pattern)`: the reverse. Returns `null` unless the pattern is exactly a literal path plus `/**` with no dot-leading segment, so `*.aux`, `.obsidian/**` and `**/drafts/**` count as "other rules".
+- `parseCollections(text, projectDir)`: uses Obsidian's `parseYaml`. Moves the `~` and relative-path resolution out of `QmdSearch.collectionRoots()` (`src/qmd/search.ts:231`) so there is one parser.
+- `withIgnore(text, collection, patterns)`: replaces only that collection's `ignore:` block.
+  - Handles block and flow styles, and removes the key when the list is empty.
+  - Inserts after `pattern:` or `path:` when the key is absent.
+  - Items are written with `JSON.stringify`, which keeps the file's double-quoted style.
+  - Comments inside the block are lost. Everything else stays byte-identical.
+
+`class QmdConfig`:
+- Holds the parsed state in memory, because `getSettingDefinitions()` must do no I/O.
+- Exposes `reload(): boolean`, `folders` (vault-relative), `otherPatterns`, `rootOf(name)`, `isExcluded(path)`, `canExclude(path)`, `exclude`, `include` and `rename`.
+- Folder mapping: vault path → absolute → relative to each collection root. Collections that don't contain the folder are skipped. A folder equal to or above a root can't be excluded.
+- `canExclude` is false when an ancestor is already excluded.
+
+Every write:
+1. Re-reads the file.
+2. Applies `withIgnore`.
+3. **Round-trip check**: parses before and after, requires `ignore` to equal the expected list, and requires everything else to be deep-equal. On a mismatch it throws and writes nothing.
+4. Writes atomically (temp file in `.qmd/`, then rename through `realpath`).
+
+Uses Node `fs`, like `runner.configPath()`, because `.qmd` is hidden from the Vault API and may be outside the vault.
+
+## Step 3: Wiring `src/qmd/search.ts`
+
+Inject `QmdConfig`. Delete `collectionRoots()`, the `roots` field and the unused `fs`/`os` imports. `toResult` uses `config.rootOf()`. `invalidate()` calls `config.reload()`, so hand edits are still picked up after each index run.
+
+## Step 4: `src/qmd/indexer.ts`
+
+- `takeRemoved()`: a running total of removed notes, read for the warning. It is a total because a running job can pick up a config change before the job that follows it. `changeExclusions` clears it first when the indexer is idle.
+- `rerun()`: `run()` joins a running job, and that job may already have read the old config. So: `if (this.job) await this.job; if (this.aborted) return; return this.run();`
+- `purge()`: waits for any running job, then runs through the same `job` slot so an update can't overlap it. The sequence is state `'purging'` → `server.stop()` → `stream(['cleanup'])` → `search.invalidate()`. In `finally`, restart the server if it was running and not aborted, so a failed cleanup never leaves it off.
+- Add `'purging'` to `IndexState`. Share one error path with `execute()`.
+
+`src/qmd/runner.ts`: add `orphaned` to `QmdStatus`, parsed from `Orphaned:\s+(\d+)`.
+
+## Step 5: `src/main.ts`
+
+- Create `config` before the tab and call `config.reload()`. Keep a `settingTab` reference. Call `config.reload()` in `applyConfig()`.
+- `excludeFolder` / `includeFolder`: run the edit in try/catch (Notice on failure), call `settingTab.update()`, and trigger a 2 s debounced reindex so several edits make one `qmd update`. Cancel the debounce in `onunload`.
+- Reindex: `await indexer.rerun()`, then `takeRemoved()`. On failure, show a Notice. If the count is above 0, show:
+  `3 notes removed from search. Their text stays in the index until you purge it in settings.`
+- `workspace.on('file-menu')`, per the Context menus docs: for a non-root `TFolder` where `canExclude` or exact exclusion holds, add **Exclude from qmd index** or **Include in qmd index**.
+- `vault.on('rename')` for folders: `config.rename(old, new)`, which also rewrites entries under `old/`, so it's safe if Obsidian fires for children too. Otherwise renaming an excluded folder would quietly re-index it. No reindex is needed.
+- Debounced `settingTab.update()` on folder create, delete and rename: the tab keeps its rows until `update()`, and a rename event arrives before the children move.
+- `refreshStatus`: treat `purging` as busy, with the text `Purging removed notes…`.
+
+## Step 6: UI
+
+`src/ui/folder-picker.ts` (new): `FuzzySuggestModal<TFolder>` with `getItems`, `getItemText` and `onChooseItem`. `FolderSuggest` needs an input element, so it doesn't fit here.
+
+`src/settings.ts`:
+- New `type: 'list'` definition after *Index*:
+  - `heading: 'Excluded folders'`, `emptyState: 'All folders are indexed.'`
+  - `addItem: { name: 'Exclude a folder', action }` opens the picker over `getAllFolders()` filtered by `canExclude`.
+  - `onDelete: (index) => includeFolder(config.folders[index])`
+  - `items`: one row per folder with `searchable: false`, and `desc: 'Not in the vault.'` when `getFolderByPath` finds nothing.
+- *Index* group: an **Other ignore rules** row listing `otherPatterns`, visible when there are any, so the list isn't mistaken for everything that's ignored.
+- *Refresh* group: a **Purge removed notes** row with a warning-styled button. Desc: `Deletes the text and vectors of notes no longer indexed. The server restarts. Including them again means embedding them again.`
+- `renderIndexStatus`: add `, N orphaned chunks` to the status line. After `verify()`, if `config.reload()` reports a change, call `this.update()`. This is the tab-open refresh for hand edits, and it can't loop because the second pass finds no change.
+
+## Step 7: Tests and docs
+
+- `test/config.test.ts`:
+  - `folderPattern` / `patternFolder` round-trips for the tricky names.
+  - `withIgnore` on a copy of the Math `index.yml` (the diff is only the block), no `ignore` key, flow style, last collection in the file, quoted names, a second collection untouched, removing the last entry.
+  - Round-trip check rejects a corrupted edit.
+- `test/obsidian-stub.ts`: `export { parse as parseYaml } from "yaml"`. Add `yaml` as a devDependency (it's already in `node_modules` transitively). No runtime dependency is added.
+- `README.md`: settings rows, a short *Good to know* note on soft removal and purge, and a **Disclosures** line saying the plugin edits `.qmd/index.yml`.
+- `AGENTS.md`: §2 layout. §3 facts: `ignore` semantics, escaping, soft removal and the ANN effect, purge needs the server off, `index.yml` is the source of truth.
+
+## Files
+
+New: `src/qmd/config.ts`, `src/ui/folder-picker.ts`, `test/config.test.ts`.
+Changed: `src/main.ts`, `src/settings.ts`, `src/qmd/search.ts`, `src/qmd/indexer.ts`, `src/qmd/runner.ts`, `test/obsidian-stub.ts`, `package.json`, `package-lock.json`, `README.md`, `AGENTS.md`, `PLAN.md`.
 
 ## Verification
-1. `npm run build`, `npm run lint` and `npm test`. These must pass; the existing vitest suite covers the query and snippet helpers and should be unchanged.
-2. `npm run deploy`, then `obsidian plugin:reload id=qmd-search`. Check `obsidian dev:errors` for errors.
-3. Confirm the setting is loaded: `obsidian eval code="app.plugins.plugins['qmd-search'].settings.hoverDelayMs"` should return `2000`.
-4. Manual test in the search panel and the related-notes panel:
-   - Sweep the pointer across several rows: no popover opens.
-   - Rest on one row: the popover opens after about 2 s, scrolled to the match.
-   - Leave the row before 2 s: nothing opens. Click a row while waiting: the note opens and no popover appears.
-   - Hold Ctrl while entering a row, or press Ctrl while resting: the popover opens at once.
-   - Set the slider to 0: the old behaviour comes back. Set it to 5000: the wait gets longer without a reload.
-   - The quick-search modal behaves as before (no hover preview).
-   - Close the panel while a timer is pending: no popover appears and `obsidian dev:errors` shows nothing.
-5. Take a screenshot of a delayed popover with `obsidian dev:screenshot path=~/qmd-hover.png`.
+
+Use a **throwaway vault** at `~/qmd-exclude-test`, not `/tmp` (the Flatpak sandbox has its own). Seed it with a few dozen notes, including a folder named `Archive (old)`. Delete it afterwards. The Math vault is not touched, because its `index.yml` and `index.sqlite` are git-tracked. Opening the new vault in Obsidian may need one manual step from the user.
+
+1. `npm run build`, `npm run lint` (0 errors, 0 warnings), `npm test`.
+2. `QMD_PLUGIN_DIR=… npm run deploy`, `obsidian plugin:reload id=qmd-vault-search`, `obsidian dev:errors`.
+3. Exclude a folder from settings:
+   - The `git diff` of `index.yml` shows only the `ignore:` block.
+   - The notice gives the right count.
+   - Keyword search and the related panel no longer return the folder.
+4. Exclude `Archive (old)` by right-click. Confirm the item flips to **Include in qmd index**, and that it works with the settings tab closed (`update()` doesn't throw).
+5. Delete the row: notes come back with no embed job.
+6. Exclude again, press Purge:
+   - The status bar shows purging.
+   - The `Orphaned` count reaches 0 and `qmd status` still reports the project index.
+   - Search works afterwards.
+   - Re-including runs `qmd embed`.
+7. Exclude a folder while `qmd update` is running: the second run picks up the change.
+8. Rename an excluded folder, and also its parent: `index.yml` follows and the notes stay out. Delete an excluded folder: the row shows *Not in the vault*.
+9. Hand-edit `index.yml` and reopen settings: the list updates.
+10. Add `# comment` lines around `ignore:` and exclude a folder: comments outside the block survive. Make the YAML unusual enough to fail the round-trip check: a Notice appears and the file is unchanged.
+11. `qmd trust list` is unchanged, and `qmd update` from a terminal keeps the exclusion.
+12. Per AGENTS §4: exactly one `qmd.js mcp --http` process after a reload, a restart, a purge and a disable.
+
+## Out of scope
+
+- Following Obsidian's own *Excluded files* (undocumented API; the user declined it).
+- Automatic purge.
+- Filtering excluded folders out of the search folder suggester.
+- Bumping typings or the version.
+
+## Sources
+
+- [Settings](https://docs.obsidian.md/Plugins/User+interface/Settings)
+- [Migrate to declarative settings](https://docs.obsidian.md/plugins/guides/migrate-declarative-settings)
+- [Context menus](https://docs.obsidian.md/Plugins/User+interface/Context+menus)
+- [Modals](https://docs.obsidian.md/Plugins/User+interface/Modals)
+- [Plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines)
+- [`obsidian@1.14.4` typings](https://unpkg.com/obsidian@1.14.4/obsidian.d.ts)
+- [Forum: where Excluded files is stored](https://forum.obsidian.md/t/where-are-the-path-listed-in-excluded-files-stored/109066)
+- qmd 2.8.3 README, `dist/store.js`, `dist/trust.js`

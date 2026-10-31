@@ -5,7 +5,7 @@ import { QmdRunner, stripAnsi } from './runner';
 import { QmdSearch } from './search';
 import { QmdServer } from './server';
 
-export type IndexState = 'idle' | 'updating' | 'embedding' | 'error';
+export type IndexState = 'idle' | 'updating' | 'embedding' | 'purging' | 'error';
 
 const LAUNCH_DELAY_MS = 20 * 1000;
 const DAILY_CHECK_MS = 15 * 60 * 1000;
@@ -16,6 +16,7 @@ export class QmdIndexer {
 	/** Outcome of the last run, for the status bar and settings. */
 	message = '';
 
+	private removed = 0;
 	private job: Promise<void> | null = null;
 	private child: ChildProcess | null = null;
 	private aborted = false;
@@ -38,6 +39,16 @@ export class QmdIndexer {
 	private setState(state: IndexState): void {
 		this.state = state;
 		this.listeners.forEach((fn) => fn());
+	}
+
+	/**
+	 * Notes taken out of the index since the last call. A running total, because a
+	 * refresh already under way can pick up a config change before the one that follows it.
+	 */
+	takeRemoved(): number {
+		const removed = this.removed;
+		this.removed = 0;
+		return removed;
 	}
 
 	/** Refresh shortly after launch, then once a day after the configured hour. */
@@ -68,18 +79,68 @@ export class QmdIndexer {
 		return this.job;
 	}
 
+	/** For a changed config: a job already running may have read the old one, so this starts a new one after it. */
+	async rerun(): Promise<void> {
+		await this.job;
+		if (!this.aborted) await this.run();
+	}
+
+	/**
+	 * Delete what notes no longer indexed left behind: their text and vectors, plus the
+	 * LLM cache. `qmd cleanup` ends with VACUUM, so the server is off while it runs.
+	 */
+	async purge(): Promise<void> {
+		await this.job;
+		if (this.aborted) return;
+		this.job ??= this.executePurge().finally(() => {
+			this.job = null;
+		});
+		return this.job;
+	}
+
 	abort(): void {
 		this.aborted = true;
 		if (this.launchTimer !== null) window.clearTimeout(this.launchTimer);
 		if (this.child) this.runner.kill(this.child);
 	}
 
-	private async execute(): Promise<void> {
-		if (this.runner.problem) {
-			this.message = this.runner.problem;
-			this.setState('error');
+	/** True, with the reason reported, when qmd must not run now. */
+	private blocked(): boolean {
+		if (!this.runner.problem) return false;
+		this.message = this.runner.problem;
+		this.setState('error');
+		return true;
+	}
+
+	private fail(e: unknown): void {
+		if (this.aborted) {
+			this.setState('idle');
 			return;
 		}
+		this.message = e instanceof Error ? e.message : String(e);
+		console.error('[qmd-vault-search] index job failed:', e);
+		this.setState('error');
+	}
+
+	private async executePurge(): Promise<void> {
+		if (this.blocked()) return;
+		const serverWasOn = this.server.state !== 'stopped';
+		try {
+			this.setState('purging');
+			await this.server.stop();
+			await this.stream(['cleanup']);
+			this.search.invalidate();
+			this.message = 'removed notes purged';
+			this.setState('idle');
+		} catch (e) {
+			this.fail(e);
+		} finally {
+			if (serverWasOn && !this.aborted) await this.server.start();
+		}
+	}
+
+	private async execute(): Promise<void> {
+		if (this.blocked()) return;
 		this.aborted = false;
 		try {
 			this.setState('updating');
@@ -92,6 +153,7 @@ export class QmdIndexer {
 				updated += Number(m[2]);
 				removed += Number(m[3]);
 			}
+			this.removed += removed;
 			const needsVectors = /unique hashes need vectors/.test(update);
 
 			let embedded = false;
@@ -114,13 +176,7 @@ export class QmdIndexer {
 				added + updated + removed > 0 ? `${added} new, ${updated} updated, ${removed} removed` : 'no changes';
 			this.setState('idle');
 		} catch (e) {
-			if (this.aborted) {
-				this.setState('idle');
-				return;
-			}
-			this.message = e instanceof Error ? e.message : String(e);
-			console.error('[qmd-vault-search] index refresh failed:', e);
-			this.setState('error');
+			this.fail(e);
 		}
 	}
 

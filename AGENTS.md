@@ -10,7 +10,8 @@ An Obsidian desktop plugin that searches the vault's own **QMD** index. Develope
 2. **Warm server for speed.** One managed `qmd mcp --http` child keeps the models loaded. Fast search goes over its REST endpoint; the CLI is used for keyword fallback, deep search and index jobs.
 3. **Zero runtime dependencies.** Obsidian API plus Node built-ins (`child_process`, `http`, `fs`, `os`, `path`).
 4. **One result row everywhere.** The modal, the search panel and the related-notes panel all use `ResultList`. Rows show note name, folder, matched section and an excerpt. No score, docid or line badges, no per-row buttons.
-5. **Scheduled refresh.** The index is refreshed at launch and daily (user's choice). When `qmd update` reports no changes, nothing else happens: no embed, no server restart.
+5. **Scheduled refresh.** The index is refreshed at launch and daily (user's choice). When `qmd update` reports no changes, nothing else happens: no embed, no server restart. Changing the excluded folders refreshes at once.
+6. **`index.yml` is the record of excluded folders.** A `qmd update` run outside Obsidian reads nothing else, so the list is never copied into `data.json`. The plugin edits only the `ignore:` block of a collection and leaves every other line alone, because the file may be tracked in git.
 
 ---
 
@@ -23,9 +24,10 @@ src/
   settings.ts          settings tab
   utils.ts             openAtMatch (+flash), link helpers
   qmd/runner.ts        binary resolution; exec/spawn/kill in the project dir (Flatpak-aware); status(); verify()
+  qmd/config.ts        index.yml: collection roots, excluded folders, safe edits of the ignore block
   qmd/server.ts        managed `qmd mcp --http` child, health, restart, http client
   qmd/search.ts        fast / deep / related; query sanitizing; result -> vault file
-  qmd/indexer.ts       update + embed job; launch and daily schedule
+  qmd/indexer.ts       update + embed job; purge; launch and daily schedule
   ui/result-list.ts    the shared rows: render, open, hover, menu, drag, keyboard selection
   ui/snippet.ts        excerpt built from the note file; render + cache
   ui/search-pane.ts    query box + folder filter + status + list (shared by modal and panel)
@@ -33,6 +35,7 @@ src/
   ui/search-view.ts    sidebar search panel
   ui/related-view.ts   related-notes panel
   ui/folder-suggest.ts folder autocomplete
+  ui/folder-picker.ts  fuzzy folder modal for "Exclude a folder"
 scripts/deploy.mjs     copy the build into the vault
 ```
 
@@ -65,9 +68,19 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 - `qmd update` prints `Indexed: N new, M updated, U unchanged, R removed` and, when vectors are missing, `(N unique hashes need vectors)`. `QmdIndexer` parses both.
 - SQLite runs in WAL mode with a 120 s busy timeout, so the server and an index job can overlap. The server is restarted after a job that changed something, which also checkpoints the WAL into `index.sqlite` (the vault tracks that file in git).
 
+**Excluded folders**
+- `collections.<name>.ignore` is YAML-only: no qmd command sets it, and `qmd update` must run before it has any effect. It is not in the `qmd trust` gated set, so editing it does not re-arm trust.
+- Rules are fast-glob patterns relative to the collection root. They must be escaped: `Archive (old)/**` silently matches nothing, `Archive \(old\)/**` works. `folderPattern()` mirrors `fg.escapePath`. A rule that is not exactly one literal folder plus `/**` is shown as an "other rule" and never rewritten.
+- A malformed `index.yml` makes every qmd command fail, so a write is refused unless parsing the result shows that only that `ignore` list changed.
+- Excluding is a soft removal: the notes leave keyword and vector results and count as `removed`, but their text and vectors stay in `index.sqlite`. Vector search takes `limit * 3` nearest chunks before it filters on active documents, so leftover vectors thin out results until `qmd cleanup`. Including a folder before a purge needs no embedding; after a purge the notes are embedded again.
+- `qmd cleanup` also clears the LLM cache and ends with VACUUM, so `purge()` stops the server first. It is manual by the user's choice.
+- `qmd status` prints `Orphaned: N embedding chunks (P%) — …` only when N > 0.
+
 **Directory and settings**
 - ID `qmd-vault-search`, name "QMD Vault Search": `qmd-search` (achekulaev/obsidian-qmd) and the name "QMD Search" (id `qmd`) are taken in the community directory. View types are prefixed `qmd-vault-` for the same reason.
-- `minAppVersion` 1.13.0: the settings tab is declarative (`getSettingDefinitions()`, no `display()`), so settings appear in Obsidian's settings search. `setControlValue` saves and restarts the server for the keys in `RECONFIGURE`; rows that depend on a toggle use `visible` and are refreshed with `refreshDomState()`.
+- `minAppVersion` 1.13.0: the settings tab is declarative (`getSettingDefinitions()`, no `display()`), so settings appear in Obsidian's settings search. `setControlValue` saves and restarts the server for the keys in `RECONFIGURE`; rows that depend on a toggle use `visible` and are refreshed with `refreshDomState()`. Excluded folders are a `type: 'list'` definition. `getSettingDefinitions()` must not read files, so it uses `QmdConfig`'s parsed state, reloaded by the index status check.
+- The tab keeps its rows until `update()`: reopening it does not rebuild them. So `update()` follows `QmdConfig.onChange` and, debounced, folder create/delete/rename. A rename event arrives before the folder's children have moved, so rows built during it are wrong.
+- In Obsidian 1.14 settings is a popout window with its own `document`. A modal opened from it (the folder picker) and a Notice appear in that window; `app.setting.activeTab.containerEl.ownerDocument` reaches it from `obsidian eval`. Checked on 1.14.5.
 - UI strings must pass `obsidianmd/ui/sentence-case`, which lowercases unknown acronyms: write "qmd" mid-sentence and never start a UI string with "QMD".
 
 **Obsidian internals used (feature-detected)**

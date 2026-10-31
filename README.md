@@ -55,6 +55,8 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 
 **Query syntax:** `"exact phrase"` and `-excluded` work for the keyword half of the search. **Folder filter:** type a folder in the field under the search box.
 
+**Excluding folders:** right-click a folder and choose **Exclude from qmd index**, or use *Excluded folders* in settings. Its notes leave search after a short refresh. Their text stays in the index file until you press **Purge**.
+
 The status bar item **QMD ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
 
 ---
@@ -65,8 +67,10 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 |---|---|---|
 | Index location | vault root | Folder that contains `.qmd`. The row below it shows the index status. |
 | Path to qmd | auto-detect | |
+| Excluded folders | none | Saved as `ignore` rules in `.qmd/index.yml`, so `qmd` run from a terminal follows them too. |
 | Refresh at startup | on | |
 | Refresh daily | on, 04:00 | First chance after that hour while Obsidian is open. |
+| Purge removed notes | button | Runs `qmd cleanup` with the server stopped. Notes you include again are embedded again. |
 | Embed changed notes | on | Runs `qmd embed` after an update that changed something. |
 | Keep a qmd server running | on | Off = keyword search only. Status, log and port show while it is on. |
 | Port | 8421 | The next five are tried if it is taken. |
@@ -107,6 +111,7 @@ The tag triggers the Release workflow, which lints, tests, builds and attaches `
 
 - **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
 - **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
 - No telemetry, ads, accounts or payments.
 
 ---
@@ -116,6 +121,7 @@ The tag triggers the Release workflow, which lints, tests, builds and attaches `
 - `.qmd/index.sqlite` changes whenever the index is refreshed after notes changed. While the server runs, the newest writes sit in `index.sqlite-wal` and are folded into `index.sqlite` when the server stops or restarts.
 - A fused search draws on the top 20 keyword and top 20 semantic hits. With a folder filter the plugin tops the list up with a wider keyword search.
 - Reranking and query expansion are CPU-bound LLM work; only fast search is instant.
+- Until you purge, the vectors of excluded notes still take up places among the nearest matches, so semantic results can be thinner. Including a folder again before a purge needs no re-embedding.
 
 ## License
 

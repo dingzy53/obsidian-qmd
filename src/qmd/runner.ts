@@ -9,6 +9,7 @@ export interface QmdStatus {
 	docs: number;
 	vectors: number;
 	pending: number;
+	orphaned: number; // vector chunks of notes no longer indexed
 	updated: string;
 }
 
@@ -244,6 +245,7 @@ export class QmdRunner {
 			docs: num(/Total:\s+(\d+)/),
 			vectors: num(/Vectors:\s+(\d+)/),
 			pending: num(/Pending:\s+(\d+)/),
+			orphaned: num(/Orphaned:\s+(\d+)/),
 			updated: /Updated:\s+(.+)$/m.exec(out)?.[1].trim() ?? '',
 		};
 	}

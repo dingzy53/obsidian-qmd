@@ -1,6 +1,7 @@
-import { App, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
 import type QmdPlugin from './main';
 import { DEFAULT_SETTINGS, QmdSettings } from './types';
+import { FolderPicker } from './ui/folder-picker';
 
 /** Settings that change which qmd runs or how: the server is restarted after them. */
 const RECONFIGURE = new Set<string>(['projectDir', 'qmdBinaryPath', 'serverEnabled', 'serverPort']);
@@ -56,7 +57,31 @@ export class QmdSettingTab extends PluginSettingTab {
 						desc: 'Empty: find it automatically.',
 						control: { type: 'text', key: 'qmdBinaryPath', placeholder: 'Auto-detect' },
 					},
+					{
+						name: 'Other ignore rules',
+						desc: `From index.yml, left as they are: ${plugin.config.otherPatterns.join(', ')}`,
+						visible: () => plugin.config.otherPatterns.length > 0,
+						searchable: false,
+					},
 				],
+			},
+			{
+				type: 'list',
+				heading: 'Excluded folders',
+				emptyState: 'All folders are indexed.',
+				addItem: {
+					name: 'Exclude a folder',
+					action: () => {
+						const folders = this.app.vault.getAllFolders().filter((folder) => plugin.config.canExclude(folder.path));
+						new FolderPicker(this.app, folders, (path) => plugin.excludeFolder(path)).open();
+					},
+				},
+				onDelete: (index) => plugin.includeFolder(plugin.config.folders[index]),
+				items: plugin.config.folders.map((folder) => ({
+					name: folder,
+					desc: this.app.vault.getFolderByPath(folder) ? '' : 'Not in the vault.',
+					searchable: false,
+				})),
 			},
 			{
 				type: 'group',
@@ -65,6 +90,11 @@ export class QmdSettingTab extends PluginSettingTab {
 					{
 						name: 'Update index now',
 						render: (setting) => this.renderUpdateNow(setting),
+					},
+					{
+						name: 'Purge removed notes',
+						desc: 'Deletes the text and vectors of notes no longer indexed. The server restarts. Including them again means embedding them again.',
+						render: (setting) => this.renderPurge(setting),
 					},
 					{
 						name: 'Refresh at startup',
@@ -165,6 +195,7 @@ export class QmdSettingTab extends PluginSettingTab {
 			setting.setDesc('Checking…');
 			const status = await plugin.runner.verify();
 			plugin.refreshStatus();
+			plugin.config.reload(); // picks up hand edits; a change renders this tab again
 			if (!status) {
 				setting.setDesc(plugin.runner.problem ?? plugin.runner.checkError ?? 'Could not check the index.');
 				setting.settingEl.addClass('qmd-settings-error');
@@ -172,8 +203,9 @@ export class QmdSettingTab extends PluginSettingTab {
 			}
 			setting.settingEl.removeClass('qmd-settings-error');
 			const pending = status.pending ? `, ${status.pending} waiting for embedding` : '';
+			const orphaned = status.orphaned ? `, ${status.orphaned} orphaned` : '';
 			setting.setDesc(
-				`${status.indexPath}: ${status.docs} notes, ${status.vectors} vectors${pending}. Updated ${status.updated || 'never'}.`
+				`${status.indexPath}: ${status.docs} notes, ${status.vectors} vectors${pending}${orphaned}. Updated ${status.updated || 'never'}.`
 			);
 		};
 		setting.addButton((btn) => btn.setButtonText('Check').onClick(() => void check()));
@@ -195,6 +227,23 @@ export class QmdSettingTab extends PluginSettingTab {
 				btn.setDisabled(false).setButtonText('Update now');
 				describe();
 			})
+		);
+	}
+
+	private renderPurge(setting: Setting): void {
+		const { plugin } = this;
+		setting.addButton((btn) =>
+			btn
+				.setButtonText('Purge')
+				.setDestructive()
+				.onClick(async () => {
+					btn.setDisabled(true).setButtonText('Purging…');
+					await plugin.indexer.purge();
+					btn.setDisabled(false).setButtonText('Purge');
+					const failed = plugin.indexer.state === 'error';
+					new Notice(failed ? `Purge failed: ${plugin.indexer.message}` : 'Removed notes purged.', failed ? 10000 : 4000);
+					this.update(); // re-runs the index status check
+				})
 		);
 	}
 

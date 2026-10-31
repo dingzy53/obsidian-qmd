@@ -1,4 +1,5 @@
-import { debounce, FileSystemAdapter, Menu, Notice, Plugin, setTooltip } from 'obsidian';
+import { debounce, FileSystemAdapter, Menu, Notice, Plugin, setTooltip, TAbstractFile, TFolder } from 'obsidian';
+import { QmdConfig } from './qmd/config';
 import { QmdIndexer } from './qmd/indexer';
 import { QmdRunner } from './qmd/runner';
 import { QmdSearch } from './qmd/search';
@@ -16,6 +17,7 @@ export default class QmdPlugin extends Plugin {
 	settings: QmdSettings = DEFAULT_SETTINGS;
 	vaultPath = '';
 	runner!: QmdRunner;
+	config!: QmdConfig;
 	server!: QmdServer;
 	search!: QmdSearch;
 	indexer!: QmdIndexer;
@@ -23,6 +25,8 @@ export default class QmdPlugin extends Plugin {
 	private statusDot: HTMLElement | null = null;
 	private statusEl: HTMLElement | null = null;
 	private reconfigure = debounce(() => void this.applyConfig(), 1000, true);
+	// Several folders changed in a row make one `qmd update`.
+	private reindex = debounce(() => void this.applyExclusions(), 2000, true);
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -31,8 +35,10 @@ export default class QmdPlugin extends Plugin {
 		this.vaultPath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : '';
 		const getSettings = () => this.settings;
 		this.runner = new QmdRunner(getSettings, this.vaultPath);
+		this.config = new QmdConfig(this.runner, this.vaultPath);
+		this.config.reload();
 		this.server = new QmdServer(this.runner, getSettings);
-		this.search = new QmdSearch(this.app, this.runner, this.server, getSettings, this.vaultPath);
+		this.search = new QmdSearch(this.app, this.runner, this.server, this.config, getSettings, this.vaultPath);
 		this.indexer = new QmdIndexer(this.runner, this.server, this.search, getSettings, () => this.saveSettings());
 
 		this.registerView(VIEW_TYPE_SEARCH, (leaf) => new QmdSearchView(leaf, this));
@@ -78,7 +84,36 @@ export default class QmdPlugin extends Plugin {
 			callback: () => void this.server.restart(),
 		});
 
-		this.addSettingTab(new QmdSettingTab(this.app, this));
+		const settingTab = new QmdSettingTab(this.app, this);
+		this.addSettingTab(settingTab);
+		this.register(this.config.onChange(() => settingTab.update()));
+		// The tab keeps its rows until update(), and a folder's children move after its rename event.
+		const refreshTab = debounce(() => settingTab.update(), 500, true);
+		this.register(() => refreshTab.cancel());
+		const folderChanged = (file: TAbstractFile) => {
+			if (file instanceof TFolder && this.config.folders.length > 0) refreshTab();
+		};
+
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFolder) || file.isRoot()) return;
+				const excluded = this.config.isExcluded(file.path);
+				if (!excluded && !this.config.canExclude(file.path)) return;
+				menu.addItem((item) =>
+					item
+						.setTitle(excluded ? 'Include in qmd index' : 'Exclude from qmd index')
+						.setIcon(excluded ? 'eye' : 'eye-off')
+						.onClick(() => (excluded ? this.includeFolder(file.path) : this.excludeFolder(file.path)))
+				);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				if (file instanceof TFolder) this.editConfig(() => this.config.rename(oldPath, file.path));
+				folderChanged(file);
+			})
+		);
+		this.registerEvent(this.app.vault.on('delete', folderChanged));
 
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('qmd-statusbar', 'mod-clickable');
@@ -90,10 +125,15 @@ export default class QmdPlugin extends Plugin {
 		this.refreshStatus();
 
 		this.registerEvent(this.app.workspace.on('quit', () => void this.server.stop()));
-		this.app.workspace.onLayoutReady(() => void this.start());
+		this.app.workspace.onLayoutReady(() => {
+			// `create` also fires for every existing file while the vault loads.
+			this.registerEvent(this.app.vault.on('create', folderChanged));
+			void this.start();
+		});
 	}
 
 	onunload(): void {
+		this.reindex.cancel();
 		this.indexer.abort();
 		void this.server.stop();
 	}
@@ -141,6 +181,40 @@ export default class QmdPlugin extends Plugin {
 		leaf.view.focusInput();
 	}
 
+	excludeFolder(folder: string): void {
+		this.changeExclusions(() => this.config.exclude(folder));
+	}
+
+	includeFolder(folder: string): void {
+		this.changeExclusions(() => this.config.include(folder));
+	}
+
+	private changeExclusions(edit: () => void): void {
+		// Removals from an earlier refresh are not part of this change; a running one's may be.
+		if (this.indexer.state === 'idle') this.indexer.takeRemoved();
+		if (this.editConfig(edit)) this.reindex();
+	}
+
+	private editConfig(edit: () => void): boolean {
+		try {
+			edit();
+			return true;
+		} catch (e) {
+			new Notice(`Could not change index.yml: ${e instanceof Error ? e.message : String(e)}`, 10000);
+			return false;
+		}
+	}
+
+	private async applyExclusions(): Promise<void> {
+		await this.indexer.rerun();
+		const removed = this.indexer.takeRemoved();
+		if (this.indexer.state === 'error') new Notice(`Index refresh failed: ${this.indexer.message}`, 10000);
+		else if (removed > 0) {
+			const notes = removed === 1 ? '1 note' : `${removed} notes`;
+			new Notice(`${notes} removed from search. Their text stays in the index until you purge it in settings.`, 8000);
+		}
+	}
+
 	private async updateIndex(): Promise<void> {
 		await this.indexer.run();
 		const failed = this.indexer.state === 'error';
@@ -157,6 +231,9 @@ export default class QmdPlugin extends Plugin {
 		} else if (this.indexer.state === 'updating' || this.indexer.state === 'embedding') {
 			cls = 'is-busy';
 			text = this.indexer.state === 'updating' ? 'Updating index…' : 'Embedding changed notes…';
+		} else if (this.indexer.state === 'purging') {
+			cls = 'is-busy';
+			text = 'Purging removed notes…';
 		} else if (this.indexer.state === 'error') {
 			cls = 'is-error';
 			text = `Index refresh failed: ${this.indexer.message}`;

@@ -1,8 +1,7 @@
 import { App, TFile } from 'obsidian';
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { isAbort, QmdResult, QmdSettings, SearchOutcome } from '../types';
+import { QmdConfig } from './config';
 import { QmdRunner } from './runner';
 import { QmdServer } from './server';
 
@@ -77,20 +76,20 @@ function parseJsonArray(output: string): RawResult[] {
 }
 
 export class QmdSearch {
-	private roots: Map<string, string> | null = null;
 	private relatedCache = new Map<string, QmdResult[]>();
 
 	constructor(
 		private app: App,
 		private runner: QmdRunner,
 		private server: QmdServer,
+		private config: QmdConfig,
 		private getSettings: () => QmdSettings,
 		private vaultPath: string
 	) {}
 
 	/** Forget everything derived from the index or its config. */
 	invalidate(): void {
-		this.roots = null;
+		this.config.reload();
 		this.relatedCache.clear();
 	}
 
@@ -205,8 +204,7 @@ export class QmdSearch {
 		const collection = slash < 0 ? rest : rest.slice(0, slash);
 		const inCollection = slash < 0 ? '' : rest.slice(slash + 1);
 
-		const root = this.collectionRoots().get(collection) ?? this.runner.projectDir;
-		const absolute = path.resolve(root, inCollection);
+		const absolute = path.resolve(this.config.rootOf(collection), inCollection);
 		const relative = path.relative(this.vaultPath, absolute).split(path.sep).join('/');
 		const inVault = !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 		const file = inVault ? this.app.vault.getFileByPath(relative) : null;
@@ -221,44 +219,6 @@ export class QmdSearch {
 			snippet: snippet.text,
 			snippetLine: snippet.startLine,
 		};
-	}
-
-	/**
-	 * Collection name → absolute root, read from the project's index.yml with a
-	 * line scanner (no YAML dependency). qmd resolves a relative `path` against
-	 * the folder that contains `.qmd`.
-	 */
-	private collectionRoots(): Map<string, string> {
-		if (this.roots) return this.roots;
-		const roots = new Map<string, string>();
-		const configPath = this.runner.configPath();
-		try {
-			const lines = configPath ? fs.readFileSync(configPath, 'utf8').split('\n') : [];
-			let inCollections = false;
-			let current = '';
-			for (const line of lines) {
-				if (/^collections:\s*$/.test(line)) {
-					inCollections = true;
-					continue;
-				}
-				if (!inCollections) continue;
-				if (/^\S/.test(line)) break; // next top-level key
-				const name = /^ {2}([^\s:#][^:]*):\s*$/.exec(line);
-				if (name) {
-					current = name[1].trim().replace(/^["']|["']$/g, '');
-					roots.set(current, this.runner.projectDir);
-					continue;
-				}
-				const dir = /^\s+path:\s*(.+)$/.exec(line);
-				if (dir && current) {
-					const value = dir[1].trim().replace(/^["']|["']$/g, '').replace(/^~(?=\/|$)/, os.homedir());
-					roots.set(current, path.resolve(this.runner.projectDir, value));
-				}
-			}
-		} catch (e) {
-			console.warn('[qmd-vault-search] could not read the qmd config:', e);
-		}
-		return (this.roots = roots);
 	}
 
 	/** Title, headings and opening text of a note, as one vector query. */
