@@ -1,7 +1,7 @@
 {
 	"id": "qmd-vault-search",
 	"name": "QMD Vault Search",
-	"version": "2.0.0",
+	"version": "2.1.0",
 	"minAppVersion": "1.13.0",
 	"description": "Search your vault with its own QMD index: hybrid keyword and semantic search, deep search on demand, and related notes.",
 	"author": "Ding",
