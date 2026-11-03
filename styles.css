@@ -201,6 +201,7 @@
 	color: var(--text-normal);
 }
 
+/* MathJax writes margin and alignment as inline styles, which only !important overrides. */
 .qmd-row-snippet mjx-container[display='true'] {
 	margin: 2px 0 !important;
 	text-align: left !important;

@@ -97,3 +97,15 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 - `npm run deploy` — build and copy into the vault (`QMD_PLUGIN_DIR` sets the target).
 - Reload in the running app: `obsidian plugin:reload id=qmd-vault-search`. Inspect with `obsidian eval code="app.plugins.plugins['qmd-vault-search']…"`, `obsidian dev:errors`, `obsidian dev:screenshot path=<file under $HOME>` (the sandbox has its own `/tmp`).
 - After any change to process handling, check that exactly one `qmd.js mcp --http` process exists after a reload, a restart and a disable.
+
+## 5. Releasing and the community directory
+
+Checked against the developer docs (obsidian-developer-docs, October 2026).
+- Plugins are submitted at community.obsidian.md, not by a PR to `obsidian-releases`. The submission happens once; after that every GitHub release is scanned automatically. A plugin with scan **errors** cannot be installed. Warnings do not block it.
+- The scan reads `manifest.json` at HEAD of `main`, then downloads the release whose tag equals its `version`. Both must agree. Tag `2.0.0` still carries the old `qmd-search` manifest, so that version can never be served again.
+- Tags have no `v` prefix (`.npmrc` sets `tag-version-prefix=""`). `release.yml` triggers only on `x.y.z` and fails if the tag differs from the manifest version.
+- **Build verification:** the scanner runs the first script it finds among `build`, `build:plugin` and `compile`, then compares the output with the release `main.js`. Only CI builds release assets.
+- The scanner lints the source with `eslint-plugin-obsidianmd`. It skips `test`, `scripts`, `*.test.*`, `*.mjs`, `esbuild.config.mjs`, `version-bump.mjs`, and a few other fixed names (see the FAQ). `vitest.config.ts` is not on that list, so it is scanned and has to stay lint-clean.
+- **Review branch**, on the plugin's directory page, previews a scan of any branch or commit without a release. Run it before tagging.
+- Description rules: at most 250 characters, ends with a period, no emoji. The `id` cannot contain `obsidian` or end in `plugin`, and the name cannot contain "Obsidian" or "Plugin". Command IDs do not repeat the plugin ID. No `fundingUrl` unless donations are accepted.
+- README disclosures are required for network use and for files outside the vault. Keep the Disclosures section accurate whenever the binary lookup, the server or the index location changes.
