@@ -117,7 +117,10 @@ The tag triggers the Release workflow. It lints, tests and builds, then attaches
 
 - **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
 - **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- **Running programs (`child_process`):** the plugin starts only the `qmd` binary, with fixed arguments and never through a shell: the search server, searches, `update`, `embed`, `status` and `cleanup`, plus `which`/`where` to locate qmd. Under Flatpak these run on the host through `flatpak-spawn --host`, because qmd is installed outside the sandbox.
+- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), and to check whether the qmd binary or `/.flatpak-info` exists. Notes are read through Obsidian's vault API.
 - **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
+- **Clipboard:** the plugin only writes to the clipboard, never reads it. It writes a link to a note when you choose *Copy link* on a result, or when you insert a link with no note open.
 - No telemetry, ads, accounts or payments.
 
 ---

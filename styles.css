@@ -201,10 +201,10 @@
 	color: var(--text-normal);
 }
 
-/* MathJax writes margin and alignment as inline styles, which only !important overrides. */
-.qmd-row-snippet mjx-container[display='true'] {
-	margin: 2px 0 !important;
-	text-align: left !important;
+/* Display math: tighter and left-aligned. Beats MathJax's own `mjx-container[display]` on specificity. */
+.qmd-row-snippet .MathJax[display='true'] {
+	margin: 2px 0;
+	text-align: left;
 }
 
 .qmd-row-snippet pre {
