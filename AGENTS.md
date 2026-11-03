@@ -109,3 +109,10 @@ Checked against the developer docs (obsidian-developer-docs, October 2026).
 - **Review branch**, on the plugin's directory page, previews a scan of any branch or commit without a release. Run it before tagging.
 - Description rules: at most 250 characters, ends with a period, no emoji. The `id` cannot contain `obsidian` or end in `plugin`, and the name cannot contain "Obsidian" or "Plugin". Command IDs do not repeat the plugin ID. No `fundingUrl` unless donations are accepted.
 - README disclosures are required for network use and for files outside the vault. Keep the Disclosures section accurate whenever the binary lookup, the server or the index location changes.
+- **Scan results, 2.1.1** (everything else passed):
+  - *Behavior*: warnings for **Direct filesystem access** (`fs`) and **Shell execution** (`child_process`), and a recommendation for **Clipboard access**. These come from the modules being used at all, not from how they are used, and they do not block listing. They are expected and accepted, and the README's Disclosures section answers each one.
+    - `child_process` is the plugin's purpose.
+    - `fs` is needed for an *Index location* outside the vault and for the binary lookup.
+    - The clipboard is write-only (*Copy link*, and the insert-link fallback in `ui/result-list.ts`). Removing those two calls would clear the recommendation.
+  - Do not add more of these modules without a matching disclosure.
+- **CSS lint** warns on `!important` and on unknown type selectors such as `mjx-container`. MathJax display math sets no inline styles. Its rule is `mjx-container[display]`, so override it by specificity with the `.MathJax` class (`.qmd-row-snippet .MathJax[display='true']`).
