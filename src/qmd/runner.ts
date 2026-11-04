@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QmdSettings } from '../types';
+import { parseCollections } from './config';
 
 export interface QmdStatus {
 	indexPath: string;
@@ -28,6 +29,60 @@ function samePath(a: string, b: string): boolean {
 		}
 	};
 	return real(a) === real(b);
+}
+
+function realOrSelf(p: string): string {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return p;
+	}
+}
+
+/** Compare two `vX.Y.Z` folder names, newest first. */
+function newestFirst(a: string, b: string): number {
+	const parts = (v: string) => v.replace(/^v/, '').split('.').map((n) => Number(n) || 0);
+	const [x, y] = [parts(a), parts(b)];
+	for (let i = 0; i < Math.max(x.length, y.length); i++) {
+		if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0);
+	}
+	return 0;
+}
+
+/**
+ * Folders where Node version managers put globally installed programs such as
+ * `npm install -g @tobilu/qmd`. An app started from the Dock or a desktop launcher does
+ * not get the PATH that the shell profile sets up for them.
+ */
+function versionManagerBins(homedir: string): string[] {
+	const env = process.env;
+	const dirs: string[] = [];
+	for (const fnm of [
+		env.FNM_DIR,
+		path.join(homedir, '.local', 'share', 'fnm'),
+		path.join(homedir, 'Library', 'Application Support', 'fnm'),
+		path.join(homedir, '.fnm'),
+	]) {
+		if (fnm) dirs.push(path.join(fnm, 'aliases', 'default', 'bin'));
+	}
+	const nvmVersions = path.join(env.NVM_DIR || path.join(homedir, '.nvm'), 'versions', 'node');
+	try {
+		for (const version of fs.readdirSync(nvmVersions).sort(newestFirst)) {
+			dirs.push(path.join(nvmVersions, version, 'bin'));
+		}
+	} catch {
+		// no nvm
+	}
+	dirs.push(
+		path.join(homedir, '.volta', 'bin'),
+		path.join(env.ASDF_DATA_DIR || path.join(homedir, '.asdf'), 'shims'),
+		path.join(homedir, '.local', 'share', 'mise', 'shims')
+	);
+	return dirs;
+}
+
+function isNotFound(e: unknown): boolean {
+	return (e as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 }
 
 /**
@@ -91,7 +146,8 @@ export class QmdRunner {
 				path.join(homedir, '.bun', 'bin', 'qmd'),
 				'/usr/local/bin/qmd',
 				'/opt/homebrew/bin/qmd',
-				'/usr/bin/qmd'
+				'/usr/bin/qmd',
+				...versionManagerBins(homedir).map((dir) => path.join(dir, 'qmd'))
 			);
 		}
 
@@ -154,7 +210,11 @@ export class QmdRunner {
 		}
 
 		const homedir = os.homedir();
+		// qmd installed with npm starts with `#!/usr/bin/env node`, and the matching node
+		// sits next to it (fnm, nvm), so the binary's own folder goes first.
+		const binaryDirs = path.isAbsolute(binary) ? [path.dirname(binary), path.dirname(realOrSelf(binary))] : [];
 		const extraPath = [
+			...new Set(binaryDirs),
 			path.join(homedir, '.local', 'bin'),
 			path.join(homedir, '.cargo', 'bin'),
 			path.join(homedir, '.bun', 'bin'),
@@ -253,24 +313,56 @@ export class QmdRunner {
 	/**
 	 * Confirm qmd really resolves to this project's index. Without this check a missing
 	 * or misplaced .qmd makes qmd fall back to the global index without saying so.
-	 * Only those two findings set `problem`; a failed or slow `qmd status` (say, during
-	 * an embed) is reported in `checkError` and does not block searching.
+	 * Those two findings, an index with no collections, and a qmd that cannot be started
+	 * set `problem`; any other failed or slow `qmd status` (say, during an embed) is
+	 * reported in `checkError` and does not block searching.
 	 */
 	async verify(): Promise<QmdStatus | null> {
 		this.checkError = null;
-		if (!this.configPath()) {
+		const configPath = this.configPath();
+		if (!configPath) {
 			this.problem = `No .qmd/index.yml in ${this.projectDir}. Run "qmd init" there or fix the index location.`;
 			return null;
 		}
+		let status: QmdStatus;
 		try {
-			const status = await this.status();
-			const matches = !!status.indexPath && samePath(status.indexPath, this.indexPath);
-			this.problem = matches ? null : `qmd is using ${status.indexPath || 'an unknown index'}, expected ${this.indexPath}.`;
-			return matches ? status : null;
+			status = await this.status();
 		} catch (e) {
-			this.problem = null;
-			this.checkError = e instanceof Error ? e.message : String(e);
+			this.problem = await this.startProblem(e);
+			if (!this.problem) {
+				this.problem = this.collectionsProblem(configPath);
+				this.checkError = e instanceof Error ? e.message : String(e);
+			}
 			return null;
 		}
+		const matches = !!status.indexPath && samePath(status.indexPath, this.indexPath);
+		this.problem = matches
+			? this.collectionsProblem(configPath)
+			: `qmd is using ${status.indexPath || 'an unknown index'}, expected ${this.indexPath}.`;
+		return this.problem ? null : status;
+	}
+
+	/** Why qmd could not be started at all, or null when the error came from qmd itself. */
+	private async startProblem(e: unknown): Promise<string | null> {
+		const fix = 'Set "Path to qmd" in the settings, or start Obsidian from a terminal.';
+		if (isNotFound(e)) {
+			const binary = await this.resolveBinary();
+			return path.isAbsolute(binary) ? `Could not find qmd at ${binary}. ${fix}` : `Could not find qmd. ${fix}`;
+		}
+		const message = e instanceof Error ? e.message : '';
+		if (/env: .*node.*: No such file or directory/.test(message)) {
+			return `Found qmd, but not the node program it needs. ${fix}`;
+		}
+		return null;
+	}
+
+	/** An index made by `qmd init` alone has no collections, so updating it indexes nothing. */
+	private collectionsProblem(configPath: string): string | null {
+		try {
+			if (parseCollections(fs.readFileSync(configPath, 'utf8'), this.projectDir).length > 0) return null;
+		} catch {
+			return null; // a malformed file makes qmd itself fail, which is reported as such
+		}
+		return `The index has no collections, so there is nothing to search. Run "qmd collection add ." in ${this.projectDir}.`;
 	}
 }

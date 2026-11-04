@@ -216,6 +216,12 @@ export default class QmdPlugin extends Plugin {
 	}
 
 	private async updateIndex(): Promise<void> {
+		// The user may have fixed the problem outside Obsidian (installed qmd, added a collection).
+		if (this.runner.problem) {
+			await this.runner.verify();
+			this.refreshStatus();
+			if (!this.runner.problem) void this.server.start();
+		}
 		await this.indexer.run();
 		const failed = this.indexer.state === 'error';
 		new Notice(`Index ${failed ? 'refresh failed: ' : 'refreshed: '}${this.indexer.message}`, failed ? 10000 : 4000);

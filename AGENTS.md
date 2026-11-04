@@ -1,6 +1,6 @@
 # QMD Vault Search (`qmd-vault-search`)
 
-An Obsidian desktop plugin that searches the vault's own **QMD** index. Developed and tested on Linux with the Flatpak build of Obsidian; the plain (non-Flatpak) spawn path is kept but untested.
+An Obsidian desktop plugin that searches the vault's own **QMD** index. Developed and tested on Linux with the Flatpak build of Obsidian. The plain (non-Flatpak) spawn path was checked on macOS 14 with 2.1.2.
 
 ---
 
@@ -48,6 +48,7 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 **Spawning**
 - Flatpak form: `flatpak-spawn --host [--watch-bus] --directory=<dir> --env=PWD=<dir> <qmd> …`. `--directory` alone leaves a stale `PWD`, which qmd reads. The sandbox environment is not forwarded to the host; pass what is needed with `--env=`.
 - `qmd` is a launcher script that starts the real program as a child process. Through `flatpak-spawn`, **SIGTERM reaches only the launcher and leaves the real process running**; SIGINT is forwarded to the whole host process group, and `--watch-bus` kills the group when the spawner dies. So `QmdRunner.kill()` sends SIGINT (outside Flatpak: SIGINT to the detached process group). Never stop qmd with SIGTERM.
+- Outside Flatpak, an app started from the macOS Dock (or a desktop launcher) gets only the system `PATH`, not the one a shell profile builds for fnm/nvm. `resolveBinary()` therefore also checks the version managers' default folders, and `command()` puts the binary's own folder (and its symlink target's) first on the child's `PATH`, because an npm-installed `qmd` starts with `#!/usr/bin/env node` and the matching `node` sits next to it. Do not ask a login shell for `PATH`: the README promises that nothing runs through a shell.
 - Never use `qmd mcp --daemon` (its pidfile is shared with the global index) and never `pkill -f`.
 
 **Server**
@@ -65,6 +66,7 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 - Query expansion costs about 12–20 s on CPU even with warm models, so deep search runs as a separate, abortable CLI process (`qmd query … --no-rerank`).
 
 **Index**
+- `qmd init` (2.8.3) creates `index.yml` with `collections: {}`. `qmd update` then indexes nothing and still exits 0, so `verify()` treats an index with no collections as a `problem`. Setup is `qmd init && qmd collection add .`.
 - `qmd update` prints `Indexed: N new, M updated, U unchanged, R removed` and, when vectors are missing, `(N unique hashes need vectors)`. `QmdIndexer` parses both.
 - SQLite runs in WAL mode with a 120 s busy timeout, so the server and an index job can overlap. The server is restarted after a job that changed something, which also checkpoints the WAL into `index.sqlite` (the vault tracks that file in git).
 

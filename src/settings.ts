@@ -202,6 +202,7 @@ export class QmdSettingTab extends PluginSettingTab {
 				return;
 			}
 			setting.settingEl.removeClass('qmd-settings-error');
+			void plugin.server.start(); // no-op when it already runs; starts it once a problem is fixed
 			const pending = status.pending ? `, ${status.pending} waiting for embedding` : '';
 			const orphaned = status.orphaned ? `, ${status.orphaned} orphaned` : '';
 			setting.setDesc(

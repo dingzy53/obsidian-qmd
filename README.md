@@ -18,8 +18,17 @@ Search your [Obsidian](https://obsidian.md) vault with its own **[QMD](https://g
 
 ## Requirements
 
-- Obsidian 1.13.0 or newer, desktop only. Tested on Linux (Flatpak and native); macOS and Windows are untested.
-- [qmd](https://github.com/tobi/qmd) installed, with an index created inside the vault (`qmd init` in the vault folder).
+- Obsidian 1.13.0 or newer, desktop only. Tested on Linux (Flatpak and native) and macOS; Windows is untested.
+- [qmd](https://github.com/tobi/qmd) installed, and an index inside the vault that contains the vault. In the vault folder, run:
+
+  ```sh
+  qmd init
+  qmd collection add .
+  ```
+
+  `qmd init` alone creates an empty index; the plugin then says that it has no collections.
+
+**qmd installed with a Node version manager** (fnm, nvm, volta, asdf, mise): the plugin also looks in the manager's default folders. If the status bar still says it can't find qmd, set **Path to qmd** in the settings. On macOS, Obsidian started from the Dock or Finder doesn't get the `PATH` set in your shell profile.
 
 ## Installation
 
@@ -45,7 +54,7 @@ You can also open the plugin's page: [community.obsidian.md/plugins/qmd-vault-se
 
 ## How it works
 
-- **The vault's own index.** The plugin runs `qmd` inside the vault folder, so qmd uses `<vault>/.qmd/index.sqlite` and `<vault>/.qmd/index.yml` (created with `qmd init`). If that index cannot be found the plugin says so and stops; it never falls back to the global index.
+- **The vault's own index.** The plugin runs `qmd` inside the vault folder, so qmd uses `<vault>/.qmd/index.sqlite` and `<vault>/.qmd/index.yml` (created with `qmd init` and `qmd collection add .`). If that index cannot be found the plugin says so and stops; it never falls back to the global index.
 - **A warm server.** While Obsidian is open the plugin keeps one `qmd mcp --http` process running so the embedding model stays loaded. A fused keyword + vector search then takes roughly 0.3–0.7 s instead of 10+ s per search through the CLI. The server stops when the plugin is disabled or Obsidian closes.
 - **Scheduled refresh.** About 20 seconds after launch, and once a day after a set hour, the plugin runs `qmd update` and, if anything changed, `qmd embed`. When nothing changed it does nothing else.
 
@@ -104,9 +113,9 @@ All settings appear in Obsidian's settings search.
 ## Privacy and security
 
 - **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
-- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, the default folders of fnm, nvm, volta, asdf and mise, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
 - **Running programs (`child_process`):** the plugin starts only the `qmd` binary, with fixed arguments and never through a shell: the search server, searches, `update`, `embed`, `status` and `cleanup`, plus `which`/`where` to locate qmd. Under Flatpak these run on the host through `flatpak-spawn --host`, because qmd is installed outside the sandbox.
-- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), and to check whether the qmd binary or `/.flatpak-info` exists. Notes are read through Obsidian's vault API.
+- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), to check whether the qmd binary or `/.flatpak-info` exists, and to list nvm's installed Node versions. Notes are read through Obsidian's vault API.
 - **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
 - **Clipboard:** the plugin only writes to the clipboard, never reads it. It writes a link to a note when you choose *Copy link* on a result, or when you insert a link with no note open.
 - No telemetry, ads, accounts or payments.
