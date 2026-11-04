@@ -1,6 +1,6 @@
 {
   "name": "qmd-vault-search",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Search your vault with its own QMD index: hybrid keyword and semantic search, deep search on demand, and related notes.",
   "main": "main.js",
   "scripts": {
