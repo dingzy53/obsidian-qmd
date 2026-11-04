@@ -7,7 +7,7 @@
 
 Search your [Obsidian](https://obsidian.md) vault with its own **[QMD](https://github.com/tobi/qmd)** index. No runtime dependencies.
 
-<!-- Screenshot: docs/images/hero.png -->
+<img src="docs/images/hero.png" alt="Searching the vault" width="1280">
 
 ## Features
 
@@ -59,6 +59,8 @@ You can also open the plugin's page: [community.obsidian.md/plugins/qmd-vault-se
 | Selection | **Search selected text** | Sends the selection to the search panel. |
 
 Each result shows the note name, its folder, the matched section and an excerpt taken from the note itself (math rendered, never cut mid-formula).
+
+![Quick search](docs/images/search.gif)
 
 **Keys in the search box**
 
