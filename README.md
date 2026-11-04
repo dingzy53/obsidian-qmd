@@ -1,6 +1,20 @@
 # QMD Vault Search
 
-An [Obsidian](https://obsidian.md) desktop plugin that searches your vault with its own **[QMD](https://github.com/tobi/qmd)** index: fast keyword + semantic search, LLM-expanded deep search on demand, and a related-notes panel. No runtime dependencies.
+[![Release](https://img.shields.io/github/v/release/dingzy53/obsidian-qmd)](https://github.com/dingzy53/obsidian-qmd/releases/latest)
+[![Downloads](https://img.shields.io/badge/dynamic/json?label=downloads&logo=obsidian&color=7c3aed&query=%24%5B%22qmd-vault-search%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)](https://community.obsidian.md/plugins/qmd-vault-search)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.13.0%2B-7c3aed?logo=obsidian)](https://obsidian.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+Search your [Obsidian](https://obsidian.md) vault with its own **[QMD](https://github.com/tobi/qmd)** index. No runtime dependencies.
+
+<!-- Screenshot: docs/images/hero.png -->
+
+## Features
+
+- Fast hybrid search: keyword and semantic results in one list.
+- Deep search with LLM query expansion, on demand.
+- A related-notes panel that follows the note you are on.
+- The index refreshes at startup and once a day.
 
 ## Requirements
 
@@ -9,21 +23,25 @@ An [Obsidian](https://obsidian.md) desktop plugin that searches your vault with 
 
 ## Installation
 
-**From the community directory** (once the plugin is listed)
+**From the community directory** (recommended)
 
-Open *Settings → Community plugins → Browse*, search for **QMD Vault Search**, then install and enable it.
+1. Open **Settings → Community plugins** and turn on community plugins if asked.
+2. Select **Browse**, search for **QMD Vault Search**, then select **Install** and **Enable**.
 
-**From a release**
+You can also open the plugin's page: [community.obsidian.md/plugins/qmd-vault-search](https://community.obsidian.md/plugins/qmd-vault-search).
+
+**Manually**
 
 1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/dingzy53/obsidian-qmd/releases/latest).
-2. Put them in `<vault>/.obsidian/plugins/qmd-vault-search/` (`.obsidian` is your vault's configuration folder).
-3. Reload Obsidian and enable **QMD Vault Search** under *Settings → Community plugins*.
+2. In **Settings → Community plugins**, select the folder icon next to **Installed plugins**. This opens `<vault>/.obsidian/plugins/`.
+3. Create a folder named `qmd-vault-search` there and put the three files in it.
+4. Select the reload icon next to **Installed plugins**, then enable **QMD Vault Search**.
+
+**Beta versions:** install [BRAT](https://github.com/TfTHacker/obsidian42-brat) and add `dingzy53/obsidian-qmd`.
+
+**Update or remove:** select **Check for updates** or **Uninstall** in **Settings → Community plugins**.
 
 **Upgrading from the `qmd-search` or `obsidian-qmd` folder:** the plugin ID is now `qmd-vault-search`. Copy `data.json` from the old plugin folder into the new one to keep your settings, then delete the old folder.
-
-**With BRAT:** add `dingzy53/obsidian-qmd`.
-
----
 
 ## How it works
 
@@ -31,9 +49,7 @@ Open *Settings → Community plugins → Browse*, search for **QMD Vault Search*
 - **A warm server.** While Obsidian is open the plugin keeps one `qmd mcp --http` process running so the embedding model stays loaded. A fused keyword + vector search then takes roughly 0.3–0.7 s instead of 10+ s per search through the CLI. The server stops when the plugin is disabled or Obsidian closes.
 - **Scheduled refresh.** About 20 seconds after launch, and once a day after a set hour, the plugin runs `qmd update` and, if anything changed, `qmd embed`. When nothing changed it does nothing else.
 
----
-
-## Using it
+## Usage
 
 | Surface | Open with | What it does |
 |---|---|---|
@@ -63,8 +79,6 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 
 The status bar item **QMD ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
 
----
-
 ## Settings
 
 | Setting | Default | Notes |
@@ -85,7 +99,22 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 
 All settings appear in Obsidian's settings search.
 
----
+## Privacy and security
+
+- **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
+- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- **Running programs (`child_process`):** the plugin starts only the `qmd` binary, with fixed arguments and never through a shell: the search server, searches, `update`, `embed`, `status` and `cleanup`, plus `which`/`where` to locate qmd. Under Flatpak these run on the host through `flatpak-spawn --host`, because qmd is installed outside the sandbox.
+- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), and to check whether the qmd binary or `/.flatpak-info` exists. Notes are read through Obsidian's vault API.
+- **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
+- **Clipboard:** the plugin only writes to the clipboard, never reads it. It writes a link to a note when you choose *Copy link* on a result, or when you insert a link with no note open.
+- No telemetry, ads, accounts or payments.
+
+## Limitations
+
+- `.qmd/index.sqlite` changes whenever the index is refreshed after notes changed. While the server runs, the newest writes sit in `index.sqlite-wal` and are folded into `index.sqlite` when the server stops or restarts.
+- A fused search draws on the top 20 keyword and top 20 semantic hits. With a folder filter the plugin tops the list up with a wider keyword search.
+- Reranking and query expansion are CPU-bound LLM work; only fast search is instant.
+- Until you purge, the vectors of excluded notes still take up places among the nearest matches, so semantic results can be thinner. Including a folder again before a purge needs no re-embedding.
 
 ## Development
 
@@ -100,7 +129,7 @@ QMD_PLUGIN_DIR=<vault>/.obsidian/plugins/qmd-vault-search npm run deploy   # bui
 
 Then reload the plugin: `obsidian plugin:reload id=qmd-vault-search`. See [AGENTS.md](AGENTS.md) for design notes.
 
-## Releasing
+### Releasing
 
 ```bash
 npm version patch   # bumps package.json, manifest.json and versions.json, commits and tags (no "v" prefix, see .npmrc)
@@ -110,27 +139,6 @@ git push --follow-tags
 The tag triggers the Release workflow. It lints, tests and builds, then attaches `main.js`, `manifest.json` and `styles.css` to a GitHub release. Never upload a `main.js` you built locally: the community directory rebuilds the tagged source with `npm run build` and checks that the result matches the release.
 
 **Community directory.** The plugin is submitted once at [community.obsidian.md](https://community.obsidian.md), from the plugin's page there. Before tagging, run **Review branch** on `main` to preview the automated review (manifest, release assets, source code, build verification). After the first submission, every new GitHub release is picked up automatically, or straight away with **Request review**.
-
----
-
-## Disclosures
-
-- **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its embedding and query models the first time they are needed; see the [qmd documentation](https://github.com/tobi/qmd).
-- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. If you set *Index location* to a folder outside the vault, the index is read from and written there.
-- **Running programs (`child_process`):** the plugin starts only the `qmd` binary, with fixed arguments and never through a shell: the search server, searches, `update`, `embed`, `status` and `cleanup`, plus `which`/`where` to locate qmd. Under Flatpak these run on the host through `flatpak-spawn --host`, because qmd is installed outside the sandbox.
-- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), and to check whether the qmd binary or `/.flatpak-info` exists. Notes are read through Obsidian's vault API.
-- **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
-- **Clipboard:** the plugin only writes to the clipboard, never reads it. It writes a link to a note when you choose *Copy link* on a result, or when you insert a link with no note open.
-- No telemetry, ads, accounts or payments.
-
----
-
-## Good to know
-
-- `.qmd/index.sqlite` changes whenever the index is refreshed after notes changed. While the server runs, the newest writes sit in `index.sqlite-wal` and are folded into `index.sqlite` when the server stops or restarts.
-- A fused search draws on the top 20 keyword and top 20 semantic hits. With a folder filter the plugin tops the list up with a wider keyword search.
-- Reranking and query expansion are CPU-bound LLM work; only fast search is instant.
-- Until you purge, the vectors of excluded notes still take up places among the nearest matches, so semantic results can be thinner. Including a folder again before a purge needs no re-embedding.
 
 ## License
 

@@ -108,9 +108,9 @@ Checked against the developer docs (obsidian-developer-docs, October 2026).
 - The scanner lints the source with `eslint-plugin-obsidianmd`. It skips `test`, `scripts`, `*.test.*`, `*.mjs`, `esbuild.config.mjs`, `version-bump.mjs`, and a few other fixed names (see the FAQ). `vitest.config.ts` is not on that list, so it is scanned and has to stay lint-clean.
 - **Review branch**, on the plugin's directory page, previews a scan of any branch or commit without a release. Run it before tagging.
 - Description rules: at most 250 characters, ends with a period, no emoji. The `id` cannot contain `obsidian` or end in `plugin`, and the name cannot contain "Obsidian" or "Plugin". Command IDs do not repeat the plugin ID. No `fundingUrl` unless donations are accepted.
-- README disclosures are required for network use and for files outside the vault. Keep the Disclosures section accurate whenever the binary lookup, the server or the index location changes.
+- README disclosures are required for network use and for files outside the vault. Keep the README's Privacy and security section accurate whenever the binary lookup, the server or the index location changes.
 - **Scan results, 2.1.1** (everything else passed):
-  - *Behavior*: warnings for **Direct filesystem access** (`fs`) and **Shell execution** (`child_process`), and a recommendation for **Clipboard access**. These come from the modules being used at all, not from how they are used, and they do not block listing. They are expected and accepted, and the README's Disclosures section answers each one.
+  - *Behavior*: warnings for **Direct filesystem access** (`fs`) and **Shell execution** (`child_process`), and a recommendation for **Clipboard access**. These come from the modules being used at all, not from how they are used, and they do not block listing. They are expected and accepted, and the README's Privacy and security section answers each one.
     - `child_process` is the plugin's purpose.
     - `fs` is needed for an *Index location* outside the vault and for the binary lookup.
     - The clipboard is write-only (*Copy link*, and the insert-link fallback in `ui/result-list.ts`). Removing those two calls would clear the recommendation.
