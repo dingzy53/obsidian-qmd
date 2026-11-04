@@ -4,7 +4,7 @@
 	"version": "2.1.1",
 	"minAppVersion": "1.13.0",
 	"description": "Search your vault with its own QMD index: hybrid keyword and semantic search, deep search on demand, and related notes.",
-	"author": "Ding",
+	"author": "Ding Zheng Yuan",
 	"authorUrl": "https://github.com/dingzy53",
 	"isDesktopOnly": true
 }

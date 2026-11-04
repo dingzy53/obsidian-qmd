@@ -134,4 +134,4 @@ The tag triggers the Release workflow. It lints, tests and builds, then attaches
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © 2026 Ding Zheng Yuan

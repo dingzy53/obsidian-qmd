@@ -21,7 +21,7 @@
     "vector",
     "semantic-search"
   ],
-  "author": "Ding",
+  "author": "Ding Zheng Yuan",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.5",
