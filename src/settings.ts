@@ -1,4 +1,5 @@
-import { App, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
+import { formatBytes } from './qmd/models';
 import type QmdPlugin from './main';
 import { DEFAULT_SETTINGS, QmdSettings } from './types';
 import { FolderPicker } from './ui/folder-picker';
@@ -184,6 +185,10 @@ export class QmdSettingTab extends PluginSettingTab {
 						control: { type: 'slider', key: 'candidateLimit', min: 5, max: 40, step: 5 },
 						visible: () => s().deepRerank,
 					},
+					{
+						name: 'Search models',
+						render: (setting) => this.renderModels(setting),
+					},
 				],
 			},
 		];
@@ -246,6 +251,49 @@ export class QmdSettingTab extends PluginSettingTab {
 					this.update(); // re-runs the index status check
 				})
 		);
+	}
+
+	private renderModels(setting: Setting): () => void {
+		const { models } = this.plugin;
+		let button: ButtonComponent | null = null;
+		const describe = () => {
+			const pulling = models.state === 'pulling';
+			button?.setDisabled(pulling).setButtonText(pulling ? 'Downloading…' : 'Download models');
+			if (models.busy) {
+				setting.setDesc(`${models.progress(models.allModels()) ?? 'Checking the models'}…`);
+				return;
+			}
+			const missing = models.states(models.allModels()).filter((state) => !state.present);
+			const failed = models.state === 'error' ? ` Last download failed: ${models.message}` : '';
+			if (missing.length === 0) {
+				setting.setDesc(`Downloaded to ${models.dir}.${failed}`);
+				return;
+			}
+			const list = missing
+				.map(({ spec }) => (spec.totalBytes ? `${spec.label} (${formatBytes(spec.totalBytes)})` : spec.label))
+				.join(', ');
+			setting.setDesc(
+				`Not downloaded yet: ${list}. Deep search downloads what it needs the first time, or download them all now.${failed}`
+			);
+		};
+		setting.addButton((btn) => {
+			button = btn;
+			btn.onClick(async () => {
+				await models.pull();
+				const failed = models.state === 'error';
+				new Notice(failed ? `Model download failed: ${models.message}` : 'Models downloaded.', failed ? 10000 : 4000);
+			});
+		});
+		describe();
+		// A download shows no output of its own, so its progress is read from the cache.
+		const timer = window.setInterval(() => {
+			if (models.busy) describe();
+		}, 1000);
+		const off = models.onChange(describe);
+		return () => {
+			window.clearInterval(timer);
+			off();
+		};
 	}
 
 	private renderServerStatus(setting: Setting): () => void {

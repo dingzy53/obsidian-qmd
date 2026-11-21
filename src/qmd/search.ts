@@ -2,7 +2,8 @@ import { App, TFile } from 'obsidian';
 import * as path from 'path';
 import { isAbort, QmdResult, QmdSettings, SearchOutcome } from '../types';
 import { QmdConfig } from './config';
-import { QmdRunner } from './runner';
+import { QmdModels } from './models';
+import { ExecOptions, QmdRunner } from './runner';
 import { QmdServer } from './server';
 
 interface RawResult {
@@ -83,6 +84,7 @@ export class QmdSearch {
 		private runner: QmdRunner,
 		private server: QmdServer,
 		private config: QmdConfig,
+		private models: QmdModels,
 		private getSettings: () => QmdSettings,
 		private vaultPath: string
 	) {}
@@ -126,7 +128,11 @@ export class QmdSearch {
 		return { results, degraded };
 	}
 
-	/** Hybrid search with LLM query expansion. Slow (~15 s on CPU), so it runs as its own process. */
+	/**
+	 * Hybrid search with LLM query expansion. Slow (~15 s on CPU), so it runs as its own process.
+	 * The first one downloads the query model (1.3 GB): the timeout waits for the download, and
+	 * a search closed meanwhile keeps running so the download is not lost.
+	 */
 	async deep(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
 		this.assertUsable();
 		const limit = opts.limit ?? this.getSettings().maxResults;
@@ -134,7 +140,15 @@ export class QmdSearch {
 		const extra = s.deepRerank ? ['-C', String(s.candidateLimit)] : ['--no-rerank'];
 		const timeout = s.deepRerank ? 15 * 60 * 1000 : 3 * 60 * 1000;
 		const fetch = opts.folder ? Math.min(200, limit * 8) : limit;
-		const raw = await this.cli('query', query.replace(/\s+/g, ' ').trim(), fetch, extra, opts.signal, timeout);
+		const specs = this.models.deepSearchModels();
+		const missing = this.models.states(specs).some((state) => !state.present);
+		// Two processes must not download the same model file at once.
+		if (missing) await this.models.idle(opts.signal);
+		const watch = this.models.watch(specs);
+		const raw = await this.cli('query', query.replace(/\s+/g, ' ').trim(), fetch, extra, opts.signal, timeout, {
+			keepAlive: () => watch.active(),
+			onRelease: (child) => this.models.release(child),
+		});
 		return { results: this.finish(raw, false, opts.folder, limit), degraded: false };
 	}
 
@@ -182,11 +196,12 @@ export class QmdSearch {
 		limit: number,
 		extra: string[],
 		signal: AbortSignal | undefined,
-		timeoutMs: number
+		timeoutMs: number,
+		download: Pick<ExecOptions, 'keepAlive' | 'onRelease'> = {}
 	): Promise<RawResult[]> {
 		// `--` keeps a query that starts with "-" from being parsed as a flag.
 		const args = [mode, '--format', 'json', '-n', String(limit), ...extra, '--', query];
-		return parseJsonArray(await this.runner.exec(args, { signal, timeoutMs }));
+		return parseJsonArray(await this.runner.exec(args, { signal, timeoutMs, ...download }));
 	}
 
 	private finish(raw: RawResult[], encoded: boolean, folder: string | undefined, limit: number): QmdResult[] {
