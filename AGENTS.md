@@ -75,7 +75,7 @@ These were established by testing against qmd 2.8.3 and Obsidian 1.13.7 (Flatpak
 - qmd downloads its models on first use into `$XDG_CACHE_HOME/qmd/models` or `~/.cache/qmd/models`. Inside Flatpak qmd runs on the host, so the sandbox's `XDG_CACHE_HOME` (under `~/.var/app`) and its `QMD_*_MODEL` variables do not apply; the sandbox reads `~/.cache` through `filesystems=home`.
 - Defaults (`dist/llm.js`): query expansion `qmd-query-expansion-1.7B-q4_k_m.gguf` (1.28 GB), reranker `qwen3-reranker-0.6b-q8_0.gguf` (639 MB), embedding `embeddinggemma-300M-Q8_0.gguf` (334 MB). `index.yml` `models.generate|rerank|embed` or `QMD_GENERATE_MODEL` etc. override them.
 - The cached file is `hf_<user>_<file>`, next to a `<file>.etag` sidecar. During a download ipull writes `hf_<user>_<file>.ipull`, sized to the total from the start and written at offsets, so its `size` says nothing: progress is its allocated blocks.
-- `qmd query` prints no download progress. The plugin does not time it out while a required model is missing and its partial file keeps growing, and a deep search closed mid-download keeps running (released, killed on unload). Only one download runs at a time.
+- `qmd query` prints no download progress. The plugin does not time it out while a required model is missing and its partial file keeps growing, and a deep search closed mid-download keeps running (released: still under the timeout, so stopped when its download stalls, and killed on unload). Only one download runs at a time.
 - `qmd pull` always fetches all three models. When the Hugging Face HEAD request fails (offline), it deletes the cached copy before downloading again. So it runs only from the settings button, never on its own.
 
 **Excluded folders**

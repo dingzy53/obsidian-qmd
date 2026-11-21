@@ -243,7 +243,8 @@ export class QmdRunner {
 	/**
 	 * Run a qmd command to completion and return its stdout. Aborting or timing out stops the process.
 	 * While `keepAlive()` is true (a model is downloading), the timeout starts over and an abort
-	 * hands the still-running process to `onRelease` instead of stopping it.
+	 * hands the still-running process to `onRelease` instead of stopping it. A released process
+	 * stays under the same timeout, so it is stopped once its download stalls or it runs too long.
 	 */
 	async exec(args: string[], opts: ExecOptions = {}): Promise<string> {
 		const aborted = () => {
@@ -270,8 +271,8 @@ export class QmdRunner {
 			};
 			const onAbort = () => {
 				if (opts.onRelease && opts.keepAlive?.()) {
+					// The timeout still applies, so a released process whose download stalls is stopped.
 					released = true;
-					window.clearTimeout(timer);
 					opts.onRelease(child);
 					reject(aborted());
 				} else {
