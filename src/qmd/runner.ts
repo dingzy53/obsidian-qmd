@@ -14,6 +14,15 @@ export interface QmdStatus {
 	updated: string;
 }
 
+export interface ExecOptions {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	/** While true, the timeout starts over and an abort releases the process instead of stopping it. */
+	keepAlive?: () => boolean;
+	/** Takes a process released by an abort; it runs on and its pipes are still drained. */
+	onRelease?: (child: ChildProcess) => void;
+}
+
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*[A-Za-z]`, 'g');
 
 export function stripAnsi(text: string): string {
@@ -231,8 +240,12 @@ export class QmdRunner {
 		return { cmd: binary, argv: args, options: { cwd: dir, env } };
 	}
 
-	/** Run a qmd command to completion and return its stdout. Aborting or timing out stops the process. */
-	async exec(args: string[], opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string> {
+	/**
+	 * Run a qmd command to completion and return its stdout. Aborting or timing out stops the process.
+	 * While `keepAlive()` is true (a model is downloading), the timeout starts over and an abort
+	 * hands the still-running process to `onRelease` instead of stopping it.
+	 */
+	async exec(args: string[], opts: ExecOptions = {}): Promise<string> {
 		const aborted = () => {
 			const e = new Error('qmd command aborted');
 			e.name = 'AbortError';
@@ -243,20 +256,42 @@ export class QmdRunner {
 		return new Promise<string>((resolve, reject) => {
 			const out: Buffer[] = [];
 			const err: Buffer[] = [];
+			const timeoutMs = opts.timeoutMs ?? 60000;
 			let stopped: Error | null = null;
+			let released = false;
+			let timer = 0;
 			const stop = (why: Error) => {
 				stopped = why;
 				this.kill(child);
 			};
-			const onAbort = () => stop(aborted());
-			const timer = window.setTimeout(() => stop(new Error(`qmd ${args[0]} timed out`)), opts.timeoutMs ?? 60000);
+			const onTimeout = () => {
+				if (opts.keepAlive?.()) timer = window.setTimeout(onTimeout, timeoutMs);
+				else stop(new Error(`qmd ${args[0]} timed out`));
+			};
+			const onAbort = () => {
+				if (opts.onRelease && opts.keepAlive?.()) {
+					released = true;
+					window.clearTimeout(timer);
+					opts.onRelease(child);
+					reject(aborted());
+				} else {
+					stop(aborted());
+				}
+			};
+			timer = window.setTimeout(onTimeout, timeoutMs);
 			opts.signal?.addEventListener('abort', onAbort, { once: true });
-			child.stdout?.on('data', (data: Buffer) => out.push(data));
-			child.stderr?.on('data', (data: Buffer) => err.push(data));
+			// Released processes keep being drained, or a full pipe would block them.
+			child.stdout?.on('data', (data: Buffer) => {
+				if (!released) out.push(data);
+			});
+			child.stderr?.on('data', (data: Buffer) => {
+				if (!released) err.push(data);
+			});
 
 			const finish = (code: number | null, spawnError?: Error) => {
 				window.clearTimeout(timer);
 				opts.signal?.removeEventListener('abort', onAbort);
+				if (released) return;
 				if (stopped) return reject(stopped);
 				if (spawnError) return reject(spawnError);
 				if (code !== 0) {

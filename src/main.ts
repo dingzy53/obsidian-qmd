@@ -1,6 +1,7 @@
 import { debounce, FileSystemAdapter, Menu, Notice, Plugin, setTooltip, TAbstractFile, TFolder } from 'obsidian';
 import { QmdConfig } from './qmd/config';
 import { QmdIndexer } from './qmd/indexer';
+import { QmdModels } from './qmd/models';
 import { QmdRunner } from './qmd/runner';
 import { QmdSearch } from './qmd/search';
 import { QmdServer } from './qmd/server';
@@ -19,6 +20,7 @@ export default class QmdPlugin extends Plugin {
 	runner!: QmdRunner;
 	config!: QmdConfig;
 	server!: QmdServer;
+	models!: QmdModels;
 	search!: QmdSearch;
 	indexer!: QmdIndexer;
 
@@ -38,7 +40,8 @@ export default class QmdPlugin extends Plugin {
 		this.config = new QmdConfig(this.runner, this.vaultPath);
 		this.config.reload();
 		this.server = new QmdServer(this.runner, getSettings);
-		this.search = new QmdSearch(this.app, this.runner, this.server, this.config, getSettings, this.vaultPath);
+		this.models = new QmdModels(this.runner, () => this.config.models, getSettings);
+		this.search = new QmdSearch(this.app, this.runner, this.server, this.config, this.models, getSettings, this.vaultPath);
 		this.indexer = new QmdIndexer(this.runner, this.server, this.search, getSettings, () => this.saveSettings());
 
 		this.registerView(VIEW_TYPE_SEARCH, (leaf) => new QmdSearchView(leaf, this));
@@ -135,6 +138,7 @@ export default class QmdPlugin extends Plugin {
 	onunload(): void {
 		this.reindex.cancel();
 		this.indexer.abort();
+		this.models.stop();
 		void this.server.stop();
 	}
 

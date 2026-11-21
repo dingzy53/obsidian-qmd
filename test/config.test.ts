@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { editIgnore, editIsSafe, folderPattern, parseCollections, patternFolder, withIgnore } from "../src/qmd/config";
+import { editIgnore, editIsSafe, folderPattern, parseCollections, parseModels, patternFolder, withIgnore } from "../src/qmd/config";
 
 // The shape of a real vault config: hand-written rules, context and models.
 const VAULT = `collections:
@@ -139,5 +139,15 @@ describe("editIgnore", () => {
 	});
 	it("refuses a collection written as a flow mapping", () => {
 		expect(() => editIgnore('collections:\n  a: {path: ., ignore: ["x/**"]}\n', "a", ["y/**"])).toThrow();
+	});
+});
+
+describe("parseModels", () => {
+	it("reads the models set in index.yml and skips the rest", () => {
+		const text = "models:\n  generate: hf:a/b/q.gguf\n  rerank: ''\ncollections: {}\n";
+		expect(parseModels(text)).toEqual({ generate: "hf:a/b/q.gguf" });
+	});
+	it("is empty without a models block", () => {
+		expect(parseModels("collections: {}\n")).toEqual({});
 	});
 });

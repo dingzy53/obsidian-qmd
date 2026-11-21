@@ -2,6 +2,7 @@ import { parseYaml } from 'obsidian';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { ModelRole } from './models';
 import type { QmdRunner } from './runner';
 
 export interface QmdCollection {
@@ -12,6 +13,7 @@ export interface QmdCollection {
 
 interface RawConfig {
 	collections?: Record<string, { path?: unknown; ignore?: unknown } | null> | null;
+	models?: Record<string, unknown> | null;
 }
 
 function rawConfig(text: string): RawConfig {
@@ -29,6 +31,17 @@ export function parseCollections(text: string, projectDir: string): QmdCollectio
 			ignore: ignore.filter((rule): rule is string => typeof rule === 'string'),
 		};
 	});
+}
+
+/** Models set in index.yml (`models.embed`, `models.generate`, `models.rerank`). */
+export function parseModels(text: string): Partial<Record<ModelRole, string>> {
+	const raw = rawConfig(text).models ?? {};
+	const models: Partial<Record<ModelRole, string>> = {};
+	for (const role of ['embed', 'generate', 'rerank'] as const) {
+		const value = raw[role];
+		if (typeof value === 'string' && value.trim()) models[role] = value.trim();
+	}
+	return models;
 }
 
 /** The ignore rule for a folder. Unescaped, a name like `Archive (old)` silently matches nothing. */
@@ -133,6 +146,8 @@ export class QmdConfig {
 	folders: string[] = [];
 	/** Ignore rules that are not folders in this vault. They are never rewritten. */
 	otherPatterns: string[] = [];
+	/** Models set in index.yml; qmd's defaults apply to the rest. */
+	models: Partial<Record<ModelRole, string>> = {};
 
 	private text = '';
 	private listeners = new Set<() => void>();
@@ -151,9 +166,11 @@ export class QmdConfig {
 		try {
 			if (configPath) text = fs.readFileSync(configPath, 'utf8');
 			this.collections = parseCollections(text, this.runner.projectDir);
+			this.models = parseModels(text);
 		} catch (e) {
 			console.warn('[qmd-vault-search] could not read the qmd config:', e);
 			this.collections = [];
+			this.models = {};
 		}
 
 		const folders = new Set<string>();

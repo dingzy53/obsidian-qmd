@@ -187,11 +187,15 @@ export class SearchPane {
 
 		if (kind === 'deep') {
 			this.plugin.remember(query);
-			this.setStatus('Deep search… 0 s', 'is-busy');
-			this.ticker = window.setInterval(
-				() => this.setStatus(`Deep search… ${Math.round((Date.now() - started) / 1000)} s`, 'is-busy'),
-				1000
-			);
+			// The first deep search downloads the query model; say so instead of a bare timer.
+			const { models } = this.plugin;
+			const specs = models.deepSearchModels();
+			const tick = () => {
+				const what = models.progress(specs) ?? 'Deep search';
+				this.setStatus(`${what}… ${Math.round((Date.now() - started) / 1000)} s`, 'is-busy');
+			};
+			tick();
+			this.ticker = window.setInterval(tick, 1000);
 		} else {
 			this.setStatus('Searching…', 'is-busy');
 		}
