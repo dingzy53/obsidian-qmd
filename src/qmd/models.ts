@@ -115,6 +115,11 @@ function unit(bytes: number): string {
 	return bytes >= 1e9 ? 'GB' : 'MB';
 }
 
+/** "1.3 GB", "639 MB". */
+export function formatBytes(bytes: number): string {
+	return `${formatSize(bytes)} ${unit(bytes)}`;
+}
+
 /** "Downloading query model (0.4 / 1.3 GB)", or "(~1.3 GB, first run)" before any progress shows. */
 export function formatDownload(state: ModelState): string {
 	const { label, totalBytes } = state.spec;
