@@ -46,7 +46,7 @@ export default class QmdPlugin extends Plugin {
 
 		this.registerView(VIEW_TYPE_SEARCH, (leaf) => new QmdSearchView(leaf, this));
 		this.registerView(VIEW_TYPE_RELATED, (leaf) => new QmdRelatedView(leaf, this));
-		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'QMD Vault Search', defaultMod: false });
+		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'Vault search (qmd)', defaultMod: false });
 
 		this.addRibbonIcon('sparkles', 'Open vault search', () => void this.openSearchView());
 
@@ -121,7 +121,7 @@ export default class QmdPlugin extends Plugin {
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('qmd-statusbar', 'mod-clickable');
 		this.statusDot = this.statusEl.createSpan({ cls: 'qmd-status-dot' });
-		this.statusEl.createSpan({ text: 'QMD' });
+		this.statusEl.createSpan({ text: 'qmd' });
 		this.statusEl.onclick = (evt) => this.showStatusMenu(evt);
 		this.register(this.server.onChange(() => this.refreshStatus()));
 		this.register(this.indexer.onChange(() => this.refreshStatus()));
@@ -145,7 +145,7 @@ export default class QmdPlugin extends Plugin {
 	private async start(): Promise<void> {
 		await this.runner.verify();
 		this.refreshStatus();
-		if (this.runner.problem) new Notice(`QMD: ${this.runner.problem}`, 10000);
+		if (this.runner.problem) new Notice(`qmd: ${this.runner.problem}`, 10000);
 		void this.server.start();
 		this.indexer.schedule(this);
 	}
@@ -261,7 +261,7 @@ export default class QmdPlugin extends Plugin {
 			? `\nIndex refreshed ${new Date(this.settings.lastIndexRun).toLocaleString()}`
 			: '';
 		this.statusDot.className = `qmd-status-dot ${cls}`;
-		setTooltip(this.statusEl, `QMD: ${text}${lastRun}`, { placement: 'top' });
+		setTooltip(this.statusEl, `qmd: ${text}${lastRun}`, { placement: 'top' });
 	}
 
 	private showStatusMenu(evt: MouseEvent): void {

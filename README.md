@@ -94,7 +94,7 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 
 **Excluding folders:** right-click a folder and choose **Exclude from qmd index**, or use *Excluded folders* in settings. Its notes leave search after a short refresh. Their text stays in the index file until you press **Purge**.
 
-The status bar item **QMD ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
+The status bar item **qmd ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
 
 ## Settings
 
