@@ -1,5 +1,5 @@
 import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
-import { formatBytes } from './qmd/models';
+import { formatBytes, formatPullButton } from './qmd/models';
 import type QmdPlugin from './main';
 import { DEFAULT_SETTINGS, QmdSettings } from './types';
 import { FolderPicker } from './ui/folder-picker';
@@ -280,12 +280,13 @@ export class QmdSettingTab extends PluginSettingTab {
 		let button: ButtonComponent | null = null;
 		const describe = () => {
 			const pulling = models.state === 'pulling';
-			button?.setDisabled(pulling).setButtonText(pulling ? 'Downloading…' : 'Download models');
+			const allStates = models.states(models.allModels());
+			button?.setDisabled(pulling).setButtonText(formatPullButton(allStates, pulling));
 			if (models.busy) {
 				setting.setDesc(`${models.progress(models.allModels()) ?? 'Checking the models'}…`);
 				return;
 			}
-			const missing = models.states(models.allModels()).filter((state) => !state.present);
+			const missing = allStates.filter((state) => !state.present);
 			const failed = models.state === 'error' ? ` Last download failed: ${models.message}` : '';
 			if (missing.length === 0) {
 				setting.setDesc(`Downloaded to ${models.dir}.${failed}`);
@@ -294,16 +295,19 @@ export class QmdSettingTab extends PluginSettingTab {
 			const list = missing
 				.map(({ spec }) => (spec.totalBytes ? `${spec.label} (${formatBytes(spec.totalBytes)})` : spec.label))
 				.join(', ');
+			const action = missing.length === 1 ? 'download it now' : 'download them now';
 			setting.setDesc(
-				`Not downloaded yet: ${list}. Deep search downloads what it needs the first time, or download them all now.${failed}`
+				`Not downloaded yet: ${list}. Deep search downloads what it needs the first time, or ${action}.${failed}`
 			);
 		};
 		setting.addButton((btn) => {
 			button = btn;
 			btn.onClick(async () => {
+				const hadMissing = models.states(models.allModels()).some((state) => !state.present);
 				await models.pull();
 				const failed = models.state === 'error';
-				new Notice(failed ? `Model download failed: ${models.message}` : 'Models downloaded.', failed ? 10000 : 4000);
+				const ok = hadMissing ? 'Models downloaded.' : 'Models checked.';
+				new Notice(failed ? `Model download failed: ${models.message}` : ok, failed ? 10000 : 4000);
 			});
 		});
 		describe();

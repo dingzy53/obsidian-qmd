@@ -3,3 +3,6 @@ export class TFile {}
 export class Plugin {}
 export class Notice {}
 export { parse as parseYaml } from "yaml";
+export function requestUrl(): Promise<{ status: number; headers: Record<string, string> }> {
+	return Promise.reject(new Error("requestUrl is not mocked in this test"));
+}
