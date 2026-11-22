@@ -1,5 +1,6 @@
 import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import { requestUrl } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
 import type { QmdSettings } from '../types';
@@ -41,6 +42,8 @@ export interface ModelSpec {
 	label: string;
 	/** File name in the hf: URI. The cached copy is `hf_<user>_<file>`. */
 	file: string;
+	/** Hugging Face resolve URL that qmd checks with HEAD for the ETag. */
+	url: string;
 	totalBytes: number | null;
 }
 
@@ -69,8 +72,12 @@ export function modelSpec(role: ModelRole, uri: string): ModelSpec | null {
 	if (!uri.startsWith('hf:')) return null;
 	const parts = uri.slice(3).split('/');
 	if (parts.length < 3) return null;
+	const repo = parts.slice(0, 2).join('/');
+	const repoPath = parts.slice(2).join('/');
 	const file = parts[parts.length - 1];
-	return { role, label: LABELS[role], file, totalBytes: KNOWN_SIZES[file] ?? null };
+	if (!file) return null;
+	const url = `https://huggingface.co/${repo}/resolve/main/${repoPath}`;
+	return { role, label: LABELS[role], file, url, totalBytes: KNOWN_SIZES[file] ?? null };
 }
 
 /** The model a role uses: index.yml `models:` first, then qmd's environment variable, then the default. */
@@ -136,6 +143,66 @@ export function formatDownload(state: ModelState): string {
 export function activeDownload(states: ModelState[]): ModelState | null {
 	const missing = states.filter((state) => !state.present);
 	return missing.find((state) => state.downloading) ?? missing[0] ?? null;
+}
+
+/** Label for the settings action button, saying what will actually be downloaded. */
+export function formatPullButton(states: ModelState[], pulling: boolean): string {
+	if (pulling) return 'Downloading…';
+	const missing = states.filter((state) => !state.present);
+	if (missing.length === 0) return 'Check for updates';
+	if (missing.length === 1) {
+		const { label, totalBytes } = missing[0].spec;
+		return totalBytes ? `Download ${label} (${formatBytes(totalBytes)})` : `Download ${label}`;
+	}
+	const allKnown = missing.every((state) => state.spec.totalBytes !== null);
+	const total = allKnown
+		? ` (${formatBytes(missing.reduce((sum, state) => sum + (state.spec.totalBytes ?? 0), 0))})`
+		: '';
+	return missing.length === states.length
+		? `Download all models${total}`
+		: `Download ${missing.length} models${total}`;
+}
+
+/** Fetch the ETag header qmd compares against `<file>.etag` during `qmd pull`. */
+export async function fetchRemoteEtag(url: string): Promise<string | null> {
+	try {
+		const res = await requestUrl({ url, method: 'HEAD', throw: false });
+		if (res.status < 200 || res.status >= 300) return null;
+		const entry = Object.entries(res.headers).find(([key]) => key.toLowerCase() === 'etag');
+		const etag = entry?.[1]?.trim();
+		return etag || null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Models downloaded lazily by `qmd embed` or `qmd query` have no `<file>.etag` sidecar,
+ * so `qmd pull` treats them as stale and re-downloads them. Write the missing sidecars
+ * for models already present in `dir` so `qmd pull` keeps them.
+ */
+export async function seedMissingEtags(
+	dir: string,
+	specs: ModelSpec[],
+	getEtag: (url: string) => Promise<string | null> = fetchRemoteEtag
+): Promise<string[]> {
+	const seeded: string[] = [];
+	await Promise.all(
+		specs.map(async (spec) => {
+			if (!modelState(dir, spec).present) return;
+			const etagPath = path.join(dir, `${spec.file}.etag`);
+			if (fs.existsSync(etagPath)) return;
+			const etag = await getEtag(spec.url);
+			if (!etag) return;
+			try {
+				fs.writeFileSync(etagPath, `${etag}\n`, 'utf8');
+				seeded.push(spec.file);
+			} catch {
+				// Best effort: if the cache is not writable, `qmd pull` will report it.
+			}
+		})
+	);
+	return seeded;
 }
 
 /**
@@ -290,6 +357,7 @@ export class QmdModels {
 		this.changed();
 		try {
 			await this.idle(undefined, false);
+			await seedMissingEtags(this.dir, this.allModels());
 			const child = await this.runner.spawn(['pull']);
 			this.pullChild = child;
 			let output = '';

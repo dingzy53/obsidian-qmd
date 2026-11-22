@@ -1,5 +1,5 @@
 import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
-import { formatBytes } from './qmd/models';
+import { formatBytes, formatPullButton } from './qmd/models';
 import type QmdPlugin from './main';
 import { DEFAULT_SETTINGS, QmdSettings } from './types';
 import { FolderPicker } from './ui/folder-picker';
@@ -16,15 +16,20 @@ export class QmdSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const value = this.plugin.settings[key as keyof QmdSettings];
-		// Dropdowns hold strings.
-		return key === 'dailyHour' ? String(value) : value;
+		// Dropdowns and text-backed optional numbers hold strings.
+		if (key === 'dailyHour') return String(value);
+		if (key === 'deepTimeoutMinutes') return value === null || value === undefined ? '' : String(value);
+		return value;
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const { plugin } = this;
 		const settings = plugin.settings as unknown as Record<string, unknown>;
 		const fallback = DEFAULT_SETTINGS[key as keyof QmdSettings];
-		if (typeof fallback === 'number') settings[key] = Number(value);
+		if (key === 'deepTimeoutMinutes') {
+			const text = typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
+			plugin.settings.deepTimeoutMinutes = text === '' ? null : Number(text);
+		} else if (typeof fallback === 'number') settings[key] = Number(value);
 		else if (typeof value === 'string') settings[key] = value.trim();
 		else settings[key] = value;
 
@@ -186,6 +191,23 @@ export class QmdSettingTab extends PluginSettingTab {
 						visible: () => s().deepRerank,
 					},
 					{
+						name: 'Deep search timeout',
+						desc: 'Minutes to wait before stopping a deep search. Empty: 10 (20 with rerank). 0: no limit.',
+						control: {
+							type: 'text',
+							key: 'deepTimeoutMinutes',
+							placeholder: '10 (20 with rerank)',
+							validate: (raw) => {
+								const text = raw.trim();
+								if (!text) return undefined;
+								const minutes = Number(text);
+								return /^\d+$/.test(text) && minutes <= 1440
+									? undefined
+									: 'Use a whole number from 0 to 1440, or leave empty for the default.';
+							},
+						},
+					},
+					{
 						name: 'Search models',
 						render: (setting) => this.renderModels(setting),
 					},
@@ -258,12 +280,13 @@ export class QmdSettingTab extends PluginSettingTab {
 		let button: ButtonComponent | null = null;
 		const describe = () => {
 			const pulling = models.state === 'pulling';
-			button?.setDisabled(pulling).setButtonText(pulling ? 'Downloading…' : 'Download models');
+			const allStates = models.states(models.allModels());
+			button?.setDisabled(pulling).setButtonText(formatPullButton(allStates, pulling));
 			if (models.busy) {
 				setting.setDesc(`${models.progress(models.allModels()) ?? 'Checking the models'}…`);
 				return;
 			}
-			const missing = models.states(models.allModels()).filter((state) => !state.present);
+			const missing = allStates.filter((state) => !state.present);
 			const failed = models.state === 'error' ? ` Last download failed: ${models.message}` : '';
 			if (missing.length === 0) {
 				setting.setDesc(`Downloaded to ${models.dir}.${failed}`);
@@ -272,16 +295,19 @@ export class QmdSettingTab extends PluginSettingTab {
 			const list = missing
 				.map(({ spec }) => (spec.totalBytes ? `${spec.label} (${formatBytes(spec.totalBytes)})` : spec.label))
 				.join(', ');
+			const action = missing.length === 1 ? 'download it now' : 'download them now';
 			setting.setDesc(
-				`Not downloaded yet: ${list}. Deep search downloads what it needs the first time, or download them all now.${failed}`
+				`Not downloaded yet: ${list}. Deep search downloads what it needs the first time, or ${action}.${failed}`
 			);
 		};
 		setting.addButton((btn) => {
 			button = btn;
 			btn.onClick(async () => {
+				const hadMissing = models.states(models.allModels()).some((state) => !state.present);
 				await models.pull();
 				const failed = models.state === 'error';
-				new Notice(failed ? `Model download failed: ${models.message}` : 'Models downloaded.', failed ? 10000 : 4000);
+				const ok = hadMissing ? 'Models downloaded.' : 'Models checked.';
+				new Notice(failed ? `Model download failed: ${models.message}` : ok, failed ? 10000 : 4000);
 			});
 		});
 		describe();

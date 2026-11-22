@@ -1,21 +1,27 @@
 import * as fs from "fs";
+import * as obsidian from "obsidian";
 import * as os from "os";
 import * as path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	activeDownload,
 	DEFAULT_MODELS,
 	DownloadWatch,
+	fetchRemoteEtag,
 	formatDownload,
+	formatPullButton,
 	ModelSpec,
 	ModelState,
 	modelCacheDir,
 	modelSpec,
 	modelState,
 	resolveModel,
+	seedMissingEtags,
 } from "../src/qmd/models";
 
 const QUERY_FILE = "qmd-query-expansion-1.7B-q4_k_m.gguf";
+const EMBED_FILE = "embeddinggemma-300M-Q8_0.gguf";
+const embed = modelSpec("embed", DEFAULT_MODELS.embed) as ModelSpec;
 const query = modelSpec("generate", DEFAULT_MODELS.generate) as ModelSpec;
 const rerank = modelSpec("rerank", DEFAULT_MODELS.rerank) as ModelSpec;
 
@@ -33,8 +39,23 @@ describe("modelCacheDir", () => {
 });
 
 describe("modelSpec and resolveModel", () => {
-	it("reads the file name and known size of an hf: URI", () => {
-		expect(query).toEqual({ role: "generate", label: "query model", file: QUERY_FILE, totalBytes: 1282438912 });
+	it("reads the file name, Hugging Face URL and known size of an hf: URI", () => {
+		expect(query).toEqual({
+			role: "generate",
+			label: "query model",
+			file: QUERY_FILE,
+			url: `https://huggingface.co/tobil/qmd-query-expansion-1.7B-gguf/resolve/main/${QUERY_FILE}`,
+			totalBytes: 1282438912,
+		});
+	});
+	it("preserves subdirectory paths in the Hugging Face URL", () => {
+		expect(modelSpec("embed", "hf:user/repo/sub/dir/other.gguf")).toEqual({
+			role: "embed",
+			label: "embedding model",
+			file: "other.gguf",
+			url: "https://huggingface.co/user/repo/resolve/main/sub/dir/other.gguf",
+			totalBytes: null,
+		});
 	});
 	it("returns null for a local model file", () => {
 		expect(modelSpec("generate", "/models/mine.gguf")).toBeNull();
@@ -142,5 +163,109 @@ describe("DownloadWatch", () => {
 		expect(watch.active()).toBe(true);
 		states = [state(query, true, null)];
 		expect(watch.active()).toBe(false);
+	});
+});
+
+describe("formatPullButton", () => {
+	it("shows Downloading… while pulling", () => {
+		expect(formatPullButton([state(query, false, null, false)], true)).toBe("Downloading…");
+	});
+	it("says Check for updates when all models are cached", () => {
+		expect(formatPullButton([state(query, true, null), state(rerank, true, null), state(embed, true, null)], false)).toBe(
+			"Check for updates"
+		);
+	});
+	it("names the single missing model and its size", () => {
+		expect(formatPullButton([state(query, true, null), state(rerank, false, null, false), state(embed, true, null)], false)).toBe(
+			"Download reranker (639 MB)"
+		);
+		const unknown = { ...rerank, totalBytes: null };
+		expect(formatPullButton([state(query, true, null), state(unknown, false, null, false)], false)).toBe("Download reranker");
+	});
+	it("shows the count and combined size when multiple models are missing", () => {
+		expect(
+			formatPullButton([state(query, false, null, false), state(rerank, false, null, false), state(embed, true, null)], false)
+		).toBe("Download 2 models (1.9 GB)");
+		expect(
+			formatPullButton(
+				[state(query, false, null, false), state(rerank, false, null, false), state(embed, false, null, false)],
+				false
+			)
+		).toBe("Download all models (2.3 GB)");
+		const unknown = { ...embed, totalBytes: null };
+		expect(
+			formatPullButton([state(query, false, null, false), state(unknown, false, null, false)], false)
+		).toBe("Download all models");
+	});
+});
+
+describe("fetchRemoteEtag", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("sends a HEAD request via requestUrl and reads ETag case-insensitively", async () => {
+		const spy = vi.spyOn(obsidian, "requestUrl").mockResolvedValue({
+			status: 200,
+			headers: { ETag: '"abc123"' },
+		} as unknown as obsidian.RequestUrlResponse);
+		await expect(fetchRemoteEtag(query.url)).resolves.toBe('"abc123"');
+		expect(spy).toHaveBeenCalledWith({ url: query.url, method: "HEAD", throw: false });
+	});
+
+	it("returns null on non-2xx responses, missing headers or errors", async () => {
+		vi.spyOn(obsidian, "requestUrl").mockResolvedValueOnce({
+			status: 404,
+			headers: { etag: '"nope"' },
+		} as unknown as obsidian.RequestUrlResponse);
+		await expect(fetchRemoteEtag(query.url)).resolves.toBeNull();
+
+		vi.spyOn(obsidian, "requestUrl").mockResolvedValueOnce({
+			status: 200,
+			headers: {},
+		} as unknown as obsidian.RequestUrlResponse);
+		await expect(fetchRemoteEtag(query.url)).resolves.toBeNull();
+
+		vi.spyOn(obsidian, "requestUrl").mockRejectedValueOnce(new Error("offline"));
+		await expect(fetchRemoteEtag(query.url)).resolves.toBeNull();
+	});
+});
+
+describe("seedMissingEtags", () => {
+	let dir: string;
+	beforeEach(() => {
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), "qmd-etags-"));
+	});
+	afterEach(() => {
+		fs.rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("writes .etag only for present models without one and leaves existing sidecars alone", async () => {
+		fs.writeFileSync(path.join(dir, `hf_tobil_${QUERY_FILE}`), "GGUF");
+		fs.writeFileSync(path.join(dir, `hf_ggml-org_${EMBED_FILE}`), "GGUF");
+		fs.writeFileSync(path.join(dir, `${EMBED_FILE}.etag`), '"already-there"\n');
+
+		const requested: string[] = [];
+		const seeded = await seedMissingEtags(dir, [query, rerank, embed], async (url) => {
+			requested.push(url);
+			return '"remote-etag"';
+		});
+
+		expect(requested).toEqual([query.url]);
+		expect(seeded).toEqual([QUERY_FILE]);
+		expect(fs.readFileSync(path.join(dir, `${QUERY_FILE}.etag`), "utf8")).toBe('"remote-etag"\n');
+		expect(fs.readFileSync(path.join(dir, `${EMBED_FILE}.etag`), "utf8")).toBe('"already-there"\n');
+		expect(fs.existsSync(path.join(dir, `${rerank.file}.etag`))).toBe(false);
+	});
+
+	it("skips writing when no ETag is returned or the cache folder does not exist", async () => {
+		fs.writeFileSync(path.join(dir, `hf_tobil_${QUERY_FILE}`), "GGUF");
+		await expect(seedMissingEtags(dir, [query], async () => null)).resolves.toEqual([]);
+		expect(fs.existsSync(path.join(dir, `${QUERY_FILE}.etag`))).toBe(false);
+
+		const missingDir = path.join(dir, "nope");
+		const getEtag = vi.fn(async () => '"unused"');
+		await expect(seedMissingEtags(missingDir, [query], getEtag)).resolves.toEqual([]);
+		expect(getEtag).not.toHaveBeenCalled();
 	});
 });

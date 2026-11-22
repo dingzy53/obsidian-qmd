@@ -17,6 +17,30 @@ interface RawResult {
 /** The server fuses the top 20 keyword and top 20 vector hits, so it never returns more than this. */
 const REST_MAX = 40;
 
+export const DEFAULT_DEEP_TIMEOUT_MIN = 10;
+export const DEFAULT_DEEP_RERANK_TIMEOUT_MIN = 20;
+const MAX_DEEP_TIMEOUT_MIN = 1440;
+export const SLOW_DEEP_SEARCH_MS = 30 * 1000;
+
+/** Deep-search timeout in ms, or 0 for no limit. */
+export function deepSearchTimeoutMs(settings: Pick<QmdSettings, 'deepRerank' | 'deepTimeoutMinutes'>): number {
+	const configured = settings.deepTimeoutMinutes;
+	if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 0) {
+		return configured === 0 ? 0 : Math.min(configured, MAX_DEEP_TIMEOUT_MIN) * 60 * 1000;
+	}
+	return (settings.deepRerank ? DEFAULT_DEEP_RERANK_TIMEOUT_MIN : DEFAULT_DEEP_TIMEOUT_MIN) * 60 * 1000;
+}
+
+/** Status line while a deep search runs: download progress first, then a slow-machine hint after ~30 s. */
+export function deepSearchStatus(progress: string | null, elapsedMs: number, waitingMs: number): string {
+	const seconds = Math.round(elapsedMs / 1000);
+	if (progress) return `${progress}… ${seconds} s`;
+	if (waitingMs >= SLOW_DEEP_SEARCH_MS) {
+		return `Deep search… ${seconds} s (loading models; slow on low-memory machines)`;
+	}
+	return `Deep search… ${seconds} s`;
+}
+
 export interface SearchOptions {
 	folder?: string;
 	limit?: number;
@@ -129,16 +153,16 @@ export class QmdSearch {
 	}
 
 	/**
-	 * Hybrid search with LLM query expansion. Slow (~15 s on CPU), so it runs as its own process.
-	 * The first one downloads the query model (1.3 GB): the timeout waits for the download, and
-	 * a search closed meanwhile keeps running so the download is not lost.
+	 * Hybrid search with LLM query expansion. Slow (seconds to minutes depending on RAM/CPU),
+	 * so it runs as its own process. The first one downloads the query model (1.3 GB): the timeout
+	 * waits for the download, and a search closed meanwhile keeps running so the download is not lost.
 	 */
 	async deep(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
 		this.assertUsable();
 		const limit = opts.limit ?? this.getSettings().maxResults;
 		const s = this.getSettings();
 		const extra = s.deepRerank ? ['-C', String(s.candidateLimit)] : ['--no-rerank'];
-		const timeout = s.deepRerank ? 15 * 60 * 1000 : 3 * 60 * 1000;
+		const timeout = deepSearchTimeoutMs(s);
 		const fetch = opts.folder ? Math.min(200, limit * 8) : limit;
 		const specs = this.models.deepSearchModels();
 		const missing = this.models.states(specs).some((state) => !state.present);

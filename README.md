@@ -32,7 +32,7 @@ Search your [Obsidian](https://obsidian.md) vault with its own **[QMD](https://g
 
 - The first `qmd embed` downloads the embedding model (about 330 MB).
 - The first deep search downloads the query model (about 1.3 GB), and the reranker (about 640 MB) if *Rerank deep search* is on. The search box shows the progress, and the search waits for the download instead of timing out. Closing the search does not stop the download.
-- To download them ahead of time, select **Download models** in the settings, or run `qmd pull` in a terminal.
+- To download them ahead of time, use the **Search models** button in the settings, or run `qmd pull` in a terminal.
 
 **qmd installed with a Node version manager** (fnm, nvm, volta, asdf, mise): the plugin also looks in the manager's default folders. If the status bar still says it can't find qmd, set **Path to qmd** in the settings. On macOS, Obsidian started from the Dock or Finder doesn't get the `PATH` set in your shell profile.
 
@@ -85,7 +85,7 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 | Enter | Open the note at the match and flash it |
 | Ctrl/Cmd+Enter | Open in a new tab |
 | Ctrl/Cmd+Alt+Enter | Open to the right |
-| Shift+Enter | Deep search: rerun with LLM query expansion (about 15–20 s on CPU) |
+| Shift+Enter | Deep search: rerun with LLM query expansion (typically 15–30 s on CPU; can take several minutes on low-RAM machines — see *Deep search timeout* in settings) |
 | Alt+Enter | Insert a link to the result at the cursor |
 
 **Mouse:** click opens, Ctrl-click or middle-click opens a new tab, resting on a row in a sidebar panel shows a page preview (after about 2 s, or at once with Ctrl held), right-click gives a menu, and a row can be dragged into a note to make a link.
@@ -94,7 +94,7 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 
 **Excluding folders:** right-click a folder and choose **Exclude from qmd index**, or use *Excluded folders* in settings. Its notes leave search after a short refresh. Their text stays in the index file until you press **Purge**.
 
-The status bar item **QMD ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
+The status bar item **qmd ●** shows the state (green ready, yellow starting or indexing, red problem). Click it to update the index, restart the server or open settings.
 
 ## Settings
 
@@ -113,16 +113,17 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 | Related notes shown | 10 | |
 | Hover preview delay | 2 s | Sidebar panels. Ctrl/Cmd-hover previews at once. |
 | Rerank deep search | off | Minutes without a dedicated GPU. Shows *Rerank candidates* when on. |
-| Search models | button | Shows which models are downloaded. **Download models** runs `qmd pull` (all three models, about 2.3 GB) and shows its progress. It needs a network connection. |
+| Deep search timeout | 10 min (20 with rerank) | Minutes to wait before stopping a deep search (`0` for no limit). Raise or disable on low-RAM machines where loading the query model takes several minutes. |
+| Search models | button | Shows which models are downloaded and what the button will fetch. Missing models are downloaded via `qmd pull`; already-cached models are kept. Needs a network connection. |
 
 All settings appear in Obsidian's settings search.
 
 ## Privacy and security
 
-- **Network:** the plugin talks only to the `qmd` server it starts itself, over HTTP on `localhost`. The plugin sends nothing to the internet. qmd downloads its models from Hugging Face the first time they are needed, or when you select **Download models**; see the [qmd documentation](https://github.com/tobi/qmd).
-- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, the default folders of fnm, nvm, volta, asdf and mise, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. The plugin reads the names and sizes of the files in qmd's model folder to show download progress. If you set *Index location* to a folder outside the vault, the index is read from and written there.
+- **Network:** the plugin talks to the `qmd` server it starts itself, over HTTP on `localhost`. When you select the **Search models** download button in settings, the plugin also sends HTTP `HEAD` requests to `huggingface.co` for already-cached models that lack a `.etag` version file, so `qmd pull` does not re-download them; no vault content or personal data is sent. qmd itself downloads its models from Hugging Face the first time they are needed or when you run `qmd pull`; see the [qmd documentation](https://github.com/tobi/qmd).
+- **Files outside the vault:** the plugin runs the external `qmd` program, which you install yourself. To find it, the plugin looks in the usual install folders (`~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, the default folders of fnm, nvm, volta, asdf and mise, and npm's global folder on Windows) and on `PATH`. qmd keeps its models and cache in your home directory. The plugin reads the names and sizes of the files in qmd's model folder to show download progress, and writes missing `.etag` sidecar files there before running `qmd pull` so cached models are not re-downloaded. If you set *Index location* to a folder outside the vault, the index is read from and written there.
 - **Running programs (`child_process`):** the plugin starts only the `qmd` binary, with fixed arguments and never through a shell: the search server, searches, `update`, `embed`, `status`, `cleanup` and `pull`, plus `which`/`where` to locate qmd. Under Flatpak these run on the host through `flatpak-spawn --host`, because qmd is installed outside the sandbox.
-- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), to check whether the qmd binary or `/.flatpak-info` exists, to list nvm's installed Node versions, and to list qmd's model folder. Notes are read through Obsidian's vault API.
+- **Direct file access (`fs`):** the index lives in a hidden `.qmd` folder, or outside the vault if you choose, which Obsidian's vault API does not reach. The plugin uses Node's `fs` only to read `.qmd/index.yml`, to rewrite its `ignore` list (see *Config file*), to check whether the qmd binary or `/.flatpak-info` exists, to list nvm's installed Node versions, to list qmd's model folder, and to write missing `.etag` sidecar files there before `qmd pull`. Notes are read through Obsidian's vault API.
 - **Config file:** excluding or including a folder, or renaming an excluded one, edits the `ignore` list in `.qmd/index.yml`. Nothing else in that file is changed.
 - **Clipboard:** the plugin only writes to the clipboard, never reads it. It writes a link to a note when you choose *Copy link* on a result, or when you insert a link with no note open.
 - No telemetry, ads, accounts or payments.

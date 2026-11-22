@@ -16,6 +16,7 @@ export interface QmdStatus {
 
 export interface ExecOptions {
 	signal?: AbortSignal;
+	/** Timeout in ms; 0 means no limit. */
 	timeoutMs?: number;
 	/** While true, the timeout starts over and an abort releases the process instead of stopping it. */
 	keepAlive?: () => boolean;
@@ -260,7 +261,7 @@ export class QmdRunner {
 			const timeoutMs = opts.timeoutMs ?? 60000;
 			let stopped: Error | null = null;
 			let released = false;
-			let timer = 0;
+			let timer: number | null = null;
 			const stop = (why: Error) => {
 				stopped = why;
 				this.kill(child);
@@ -279,7 +280,7 @@ export class QmdRunner {
 					stop(aborted());
 				}
 			};
-			timer = window.setTimeout(onTimeout, timeoutMs);
+			if (timeoutMs > 0) timer = window.setTimeout(onTimeout, timeoutMs);
 			opts.signal?.addEventListener('abort', onAbort, { once: true });
 			// Released processes keep being drained, or a full pipe would block them.
 			child.stdout?.on('data', (data: Buffer) => {
@@ -290,7 +291,7 @@ export class QmdRunner {
 			});
 
 			const finish = (code: number | null, spawnError?: Error) => {
-				window.clearTimeout(timer);
+				if (timer !== null) window.clearTimeout(timer);
 				opts.signal?.removeEventListener('abort', onAbort);
 				if (released) return;
 				if (stopped) return reject(stopped);
