@@ -85,7 +85,7 @@ Each result shows the note name, its folder, the matched section and an excerpt 
 | Enter | Open the note at the match and flash it |
 | Ctrl/Cmd+Enter | Open in a new tab |
 | Ctrl/Cmd+Alt+Enter | Open to the right |
-| Shift+Enter | Deep search: rerun with LLM query expansion (about 15–20 s on CPU) |
+| Shift+Enter | Deep search: rerun with LLM query expansion (typically 15–30 s on CPU; can take several minutes on low-RAM machines — see *Deep search timeout* in settings) |
 | Alt+Enter | Insert a link to the result at the cursor |
 
 **Mouse:** click opens, Ctrl-click or middle-click opens a new tab, resting on a row in a sidebar panel shows a page preview (after about 2 s, or at once with Ctrl held), right-click gives a menu, and a row can be dragged into a note to make a link.
@@ -113,6 +113,7 @@ The status bar item **QMD ●** shows the state (green ready, yellow starting or
 | Related notes shown | 10 | |
 | Hover preview delay | 2 s | Sidebar panels. Ctrl/Cmd-hover previews at once. |
 | Rerank deep search | off | Minutes without a dedicated GPU. Shows *Rerank candidates* when on. |
+| Deep search timeout | 10 min (20 with rerank) | Minutes to wait before stopping a deep search (`0` for no limit). Raise or disable on low-RAM machines where loading the query model takes several minutes. |
 | Search models | button | Shows which models are downloaded. **Download models** runs `qmd pull` (all three models, about 2.3 GB) and shows its progress. It needs a network connection. |
 
 All settings appear in Obsidian's settings search.

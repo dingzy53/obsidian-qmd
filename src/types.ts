@@ -13,6 +13,7 @@ export interface QmdSettings {
 	relatedResults: number;
 	deepRerank: boolean;
 	candidateLimit: number;
+	deepTimeoutMinutes: number | null; // null = default (10 min, 20 with rerank); 0 = no limit
 	hoverDelayMs: number; // wait before the sidebar page preview opens; 0 = at once
 	lastIndexRun: number; // epoch ms, 0 = never
 	history: string[];
@@ -31,6 +32,7 @@ export const DEFAULT_SETTINGS: QmdSettings = {
 	relatedResults: 10,
 	deepRerank: false,
 	candidateLimit: 10,
+	deepTimeoutMinutes: null,
 	hoverDelayMs: 2000,
 	lastIndexRun: 0,
 	history: [],

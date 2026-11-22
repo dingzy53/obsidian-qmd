@@ -16,15 +16,20 @@ export class QmdSettingTab extends PluginSettingTab {
 
 	getControlValue(key: string): unknown {
 		const value = this.plugin.settings[key as keyof QmdSettings];
-		// Dropdowns hold strings.
-		return key === 'dailyHour' ? String(value) : value;
+		// Dropdowns and text-backed optional numbers hold strings.
+		if (key === 'dailyHour') return String(value);
+		if (key === 'deepTimeoutMinutes') return value === null || value === undefined ? '' : String(value);
+		return value;
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const { plugin } = this;
 		const settings = plugin.settings as unknown as Record<string, unknown>;
 		const fallback = DEFAULT_SETTINGS[key as keyof QmdSettings];
-		if (typeof fallback === 'number') settings[key] = Number(value);
+		if (key === 'deepTimeoutMinutes') {
+			const text = typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
+			plugin.settings.deepTimeoutMinutes = text === '' ? null : Number(text);
+		} else if (typeof fallback === 'number') settings[key] = Number(value);
 		else if (typeof value === 'string') settings[key] = value.trim();
 		else settings[key] = value;
 
@@ -184,6 +189,23 @@ export class QmdSettingTab extends PluginSettingTab {
 						desc: 'How many results the reranker reads. Fewer is faster.',
 						control: { type: 'slider', key: 'candidateLimit', min: 5, max: 40, step: 5 },
 						visible: () => s().deepRerank,
+					},
+					{
+						name: 'Deep search timeout',
+						desc: 'Minutes to wait before stopping a deep search. Empty: 10 (20 with rerank). 0: no limit.',
+						control: {
+							type: 'text',
+							key: 'deepTimeoutMinutes',
+							placeholder: '10 (20 with rerank)',
+							validate: (raw) => {
+								const text = raw.trim();
+								if (!text) return undefined;
+								const minutes = Number(text);
+								return /^\d+$/.test(text) && minutes <= 1440
+									? undefined
+									: 'Use a whole number from 0 to 1440, or leave empty for the default.';
+							},
+						},
 					},
 					{
 						name: 'Search models',

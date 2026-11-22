@@ -1,5 +1,6 @@
 import { Component, HoverParent, Keymap, setIcon, setTooltip } from 'obsidian';
 import type QmdPlugin from '../main';
+import { deepSearchStatus } from '../qmd/search';
 import { isAbort } from '../types';
 import { FolderSuggest } from './folder-suggest';
 import { ResultList } from './result-list';
@@ -190,9 +191,14 @@ export class SearchPane {
 			// The first deep search downloads the query model; say so instead of a bare timer.
 			const { models } = this.plugin;
 			const specs = models.deepSearchModels();
+			let modelsReadyAt: number | null = null;
 			const tick = () => {
-				const what = models.progress(specs) ?? 'Deep search';
-				this.setStatus(`${what}… ${Math.round((Date.now() - started) / 1000)} s`, 'is-busy');
+				const now = Date.now();
+				const progress = models.progress(specs);
+				if (progress) modelsReadyAt = null;
+				else modelsReadyAt ??= now;
+				const waitingMs = modelsReadyAt === null ? 0 : now - modelsReadyAt;
+				this.setStatus(deepSearchStatus(progress, now - started, waitingMs), 'is-busy');
 			};
 			tick();
 			this.ticker = window.setInterval(tick, 1000);
