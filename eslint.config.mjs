@@ -4,7 +4,7 @@ import obsidianmd from "eslint-plugin-obsidianmd";
 // The same rules the community-plugin review runs, plus two stricter local ones.
 export default defineConfig([
 	{
-		ignores: ["main.js", "node_modules/**", "test/obsidian-stub.ts"],
+		ignores: ["main.js", "node_modules/**", "test/obsidian-stub.ts", ".obsidian-cache/**", "wdio.conf.mts", "scripts/check-mobile-compat.mjs", "test/e2e/**", "test-vault/**"],
 	},
 	...obsidianmd.configs.recommended,
 	{
