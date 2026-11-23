@@ -20,6 +20,15 @@ function rawConfig(text: string): RawConfig {
 	return ((parseYaml(text) as RawConfig | null) ?? {});
 }
 
+/** Resolve symlinks on an existing path, falling back to `path.resolve`. */
+export function realPath(target: string): string {
+	try {
+		return fs.realpathSync(target);
+	} catch {
+		return path.resolve(target);
+	}
+}
+
 /** Collections of an index.yml. qmd resolves a relative `path` against the folder that contains `.qmd`. */
 export function parseCollections(text: string, projectDir: string): QmdCollection[] {
 	return Object.entries(rawConfig(text).collections ?? {}).map(([name, raw]) => {
@@ -150,6 +159,9 @@ export class QmdConfig {
 	models: Partial<Record<ModelRole, string>> = {};
 
 	private text = '';
+	private lastPath = '';
+	private lastMtimeMs = -1;
+	private lastSize = -1;
 	private listeners = new Set<() => void>();
 
 	constructor(private runner: QmdRunner, private vaultPath: string) {}
@@ -159,12 +171,19 @@ export class QmdConfig {
 		return () => this.listeners.delete(listener);
 	}
 
-	/** Read index.yml again, and tell the listeners if it changed. */
-	reload(): void {
+	/** Read index.yml again, and tell the listeners if it changed. Returns whether text changed. */
+	reload(): boolean {
 		const configPath = this.runner.configPath();
 		let text = '';
+		let mtimeMs = -1;
+		let size = -1;
 		try {
-			if (configPath) text = fs.readFileSync(configPath, 'utf8');
+			if (configPath) {
+				const st = fs.statSync(configPath);
+				mtimeMs = st.mtimeMs;
+				size = st.size;
+				text = fs.readFileSync(configPath, 'utf8');
+			}
 			this.collections = parseCollections(text, this.runner.projectDir);
 			this.models = parseModels(text);
 		} catch (e) {
@@ -188,7 +207,28 @@ export class QmdConfig {
 
 		const changed = text !== this.text;
 		this.text = text;
+		this.lastPath = configPath ?? '';
+		this.lastMtimeMs = mtimeMs;
+		this.lastSize = size;
 		if (changed) this.listeners.forEach((fn) => fn());
+		return changed;
+	}
+
+	/** Reload only when `.qmd/index.yml` appeared, vanished, or changed on disk. */
+	reloadIfChanged(): boolean {
+		const configPath = this.runner.configPath() ?? '';
+		if (!configPath) {
+			return this.lastPath !== '' ? this.reload() : false;
+		}
+		try {
+			const st = fs.statSync(configPath);
+			if (configPath !== this.lastPath || st.mtimeMs !== this.lastMtimeMs || st.size !== this.lastSize) {
+				return this.reload();
+			}
+			return false;
+		} catch {
+			return this.lastPath !== '' ? this.reload() : false;
+		}
 	}
 
 	/** Absolute root of a collection. */
@@ -257,14 +297,18 @@ export class QmdConfig {
 
 	/** `folder` (vault-relative) as a path strictly inside `root`, or null. */
 	private inRoot(folder: string, root: string): string | null {
-		const relative = path.relative(root, path.join(this.vaultPath, folder));
+		const realVault = realPath(this.vaultPath);
+		const realRoot = realPath(root);
+		const relative = path.relative(realRoot, path.join(realVault, folder));
 		if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
 		return relative.split(path.sep).join('/');
 	}
 
 	/** A path inside `root` as a vault-relative folder, or null when it is outside the vault. */
 	private vaultFolder(root: string, inRoot: string): string | null {
-		const relative = path.relative(this.vaultPath, path.join(root, inRoot));
+		const realVault = realPath(this.vaultPath);
+		const realRoot = realPath(root);
+		const relative = path.relative(realVault, path.join(realRoot, inRoot));
 		if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
 		return relative.split(path.sep).join('/');
 	}

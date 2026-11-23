@@ -1,7 +1,7 @@
 import { App, TFile } from 'obsidian';
 import * as path from 'path';
 import { isAbort, QmdResult, QmdSettings, SearchOutcome } from '../types';
-import { QmdConfig } from './config';
+import { QmdConfig, realPath } from './config';
 import { QmdModels } from './models';
 import { ExecOptions, QmdRunner } from './runner';
 import { QmdServer } from './server';
@@ -122,6 +122,7 @@ export class QmdSearch {
 	/** Keyword + vector search on the warm server (well under a second); keyword-only through the CLI otherwise. */
 	async fast(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
 		this.assertUsable();
+		if (this.config.reloadIfChanged()) this.relatedCache.clear();
 		const limit = opts.limit ?? this.getSettings().maxResults;
 		const lex = toLexQuery(query);
 		let results: QmdResult[] = [];
@@ -159,6 +160,7 @@ export class QmdSearch {
 	 */
 	async deep(query: string, opts: SearchOptions = {}): Promise<SearchOutcome> {
 		this.assertUsable();
+		if (this.config.reloadIfChanged()) this.relatedCache.clear();
 		const limit = opts.limit ?? this.getSettings().maxResults;
 		const s = this.getSettings();
 		const extra = s.deepRerank ? ['-C', String(s.candidateLimit)] : ['--no-rerank'];
@@ -179,6 +181,7 @@ export class QmdSearch {
 	/** Notes semantically close to `file`. Needs the server: a CLI vector search takes 10+ s. */
 	async related(file: TFile, signal?: AbortSignal): Promise<QmdResult[]> {
 		this.assertUsable();
+		if (this.config.reloadIfChanged()) this.relatedCache.clear();
 		if (this.server.state !== 'ready') throw new Error('The qmd server is not running yet.');
 		const key = `${file.path}:${file.stat.mtime}`;
 		const cached = this.relatedCache.get(key);
@@ -243,8 +246,10 @@ export class QmdSearch {
 		const collection = slash < 0 ? rest : rest.slice(0, slash);
 		const inCollection = slash < 0 ? '' : rest.slice(slash + 1);
 
-		const absolute = path.resolve(this.config.rootOf(collection), inCollection);
-		const relative = path.relative(this.vaultPath, absolute).split(path.sep).join('/');
+		const realRoot = realPath(this.config.rootOf(collection));
+		const realVault = realPath(this.vaultPath);
+		const absolute = path.resolve(realRoot, inCollection);
+		const relative = path.relative(realVault, absolute).split(path.sep).join('/');
 		const inVault = !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 		const file = inVault ? this.app.vault.getFileByPath(relative) : null;
 		const snippet = cleanSnippet(raw.snippet);

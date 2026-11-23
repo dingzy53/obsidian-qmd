@@ -4,7 +4,7 @@ import { QmdIndexer } from './qmd/indexer';
 import { QmdModels } from './qmd/models';
 import { QmdRunner } from './qmd/runner';
 import { QmdSearch } from './qmd/search';
-import { QmdServer } from './qmd/server';
+import { QmdServer, type ManagedServerRecord } from './qmd/server';
 import { QmdSettingTab } from './settings';
 import { DEFAULT_SETTINGS, QmdSettings } from './types';
 import { QmdRelatedView, VIEW_TYPE_RELATED } from './ui/related-view';
@@ -13,6 +13,13 @@ import { QmdSearchModal } from './ui/search-modal';
 import { QmdSearchView, VIEW_TYPE_SEARCH } from './ui/search-view';
 
 const HISTORY_SIZE = 20;
+const SERVER_STORAGE_KEY = 'qmd-vault-search-server';
+
+function isServerRecord(value: unknown): value is ManagedServerRecord {
+	if (!value || typeof value !== 'object') return false;
+	const r = value as Partial<ManagedServerRecord>;
+	return typeof r.pid === 'number' && typeof r.port === 'number' && typeof r.projectDir === 'string';
+}
 
 export default class QmdPlugin extends Plugin {
 	settings: QmdSettings = DEFAULT_SETTINGS;
@@ -39,7 +46,13 @@ export default class QmdPlugin extends Plugin {
 		this.runner = new QmdRunner(getSettings, this.vaultPath);
 		this.config = new QmdConfig(this.runner, this.vaultPath);
 		this.config.reload();
-		this.server = new QmdServer(this.runner, getSettings);
+		this.server = new QmdServer(this.runner, getSettings, {
+			load: () => {
+				const raw: unknown = this.app.loadLocalStorage(SERVER_STORAGE_KEY);
+				return isServerRecord(raw) ? raw : null;
+			},
+			save: (record) => this.app.saveLocalStorage(SERVER_STORAGE_KEY, record),
+		});
 		this.models = new QmdModels(this.runner, () => this.config.models, getSettings);
 		this.search = new QmdSearch(this.app, this.runner, this.server, this.config, this.models, getSettings, this.vaultPath);
 		this.indexer = new QmdIndexer(this.runner, this.server, this.search, getSettings, () => this.saveSettings());
@@ -48,7 +61,7 @@ export default class QmdPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_RELATED, (leaf) => new QmdRelatedView(leaf, this));
 		this.registerHoverLinkSource(HOVER_SOURCE, { display: 'Vault search (qmd)', defaultMod: false });
 
-		this.addRibbonIcon('sparkles', 'Open vault search', () => void this.openSearchView());
+		this.addRibbonIcon('sparkles', 'Open search panel', () => void this.openSearchView());
 
 		this.addCommand({
 			id: 'search',
@@ -84,7 +97,7 @@ export default class QmdPlugin extends Plugin {
 		this.addCommand({
 			id: 'restart-server',
 			name: 'Restart qmd server',
-			callback: () => void this.server.restart(),
+			callback: () => void this.restartServer(),
 		});
 
 		const settingTab = new QmdSettingTab(this.app, this);
@@ -120,9 +133,17 @@ export default class QmdPlugin extends Plugin {
 
 		this.statusEl = this.addStatusBarItem();
 		this.statusEl.addClass('qmd-statusbar', 'mod-clickable');
+		this.statusEl.setAttribute('role', 'button');
+		this.statusEl.setAttribute('tabindex', '0');
 		this.statusDot = this.statusEl.createSpan({ cls: 'qmd-status-dot' });
 		this.statusEl.createSpan({ text: 'qmd' });
-		this.statusEl.onclick = (evt) => this.showStatusMenu(evt);
+		this.registerDomEvent(this.statusEl, 'click', (evt) => this.showStatusMenu(evt));
+		this.registerDomEvent(this.statusEl, 'keydown', (evt) => {
+			if (evt.key === 'Enter' || evt.key === ' ') {
+				evt.preventDefault();
+				this.showStatusMenu();
+			}
+		});
 		this.register(this.server.onChange(() => this.refreshStatus()));
 		this.register(this.indexer.onChange(() => this.refreshStatus()));
 		this.refreshStatus();
@@ -219,16 +240,26 @@ export default class QmdPlugin extends Plugin {
 		}
 	}
 
-	private async updateIndex(): Promise<void> {
+	async updateIndex(): Promise<void> {
 		// The user may have fixed the problem outside Obsidian (installed qmd, added a collection).
 		if (this.runner.problem) {
 			await this.runner.verify();
+			if (!this.runner.problem) this.indexer.clearError();
 			this.refreshStatus();
 			if (!this.runner.problem) void this.server.start();
 		}
 		await this.indexer.run();
+		this.search.invalidate();
 		const failed = this.indexer.state === 'error';
 		new Notice(`Index ${failed ? 'refresh failed: ' : 'refreshed: '}${this.indexer.message}`, failed ? 10000 : 4000);
+	}
+
+	async restartServer(): Promise<void> {
+		await this.runner.verify();
+		this.search.invalidate();
+		if (!this.runner.problem) this.indexer.clearError();
+		this.refreshStatus();
+		await this.server.restart();
 	}
 
 	refreshStatus(): void {
@@ -264,13 +295,13 @@ export default class QmdPlugin extends Plugin {
 		setTooltip(this.statusEl, `qmd: ${text}${lastRun}`, { placement: 'top' });
 	}
 
-	private showStatusMenu(evt: MouseEvent): void {
+	private showStatusMenu(evt?: MouseEvent): void {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item.setTitle('Update index now').setIcon('refresh-cw').onClick(() => void this.updateIndex())
 		);
 		menu.addItem((item) =>
-			item.setTitle('Restart qmd server').setIcon('rotate-ccw').onClick(() => void this.server.restart())
+			item.setTitle('Restart qmd server').setIcon('rotate-ccw').onClick(() => void this.restartServer())
 		);
 		menu.addItem((item) =>
 			item.setTitle('Settings').setIcon('settings').onClick(() => {
@@ -279,6 +310,11 @@ export default class QmdPlugin extends Plugin {
 				setting?.openTabById(this.manifest.id);
 			})
 		);
-		menu.showAtMouseEvent(evt);
+		if (evt) {
+			menu.showAtMouseEvent(evt);
+		} else if (this.statusEl) {
+			const rect = this.statusEl.getBoundingClientRect();
+			menu.showAtPosition({ x: rect.left, y: rect.top });
+		}
 	}
 }

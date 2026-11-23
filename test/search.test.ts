@@ -1,6 +1,12 @@
 import { ChildProcess } from "child_process";
 import { EventEmitter } from "events";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { App, TFile } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QmdConfig } from "../src/qmd/config";
+import type { QmdModels } from "../src/qmd/models";
 import { QmdRunner } from "../src/qmd/runner";
 import {
 	cleanSnippet,
@@ -9,10 +15,12 @@ import {
 	deepSearchStatus,
 	deepSearchTimeoutMs,
 	proseToVecQuery,
+	QmdSearch,
 	SLOW_DEEP_SEARCH_MS,
 	toLexQuery,
 	toVecQuery,
 } from "../src/qmd/search";
+import { isManagedQmdServerCommand, type QmdServer } from "../src/qmd/server";
 import { DEFAULT_SETTINGS } from "../src/types";
 
 describe("toLexQuery", () => {
@@ -123,5 +131,55 @@ describe("QmdRunner.exec timeoutMs = 0", () => {
 		child.exitCode = 0;
 		child.emit("close", 0);
 		await expect(done).resolves.toBe("[]");
+	});
+});
+
+describe("QmdSearch symlink resolution (BUG-05)", () => {
+	it("resolves results inside the vault when vaultPath or collection root is a symlink alias", async () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qmd-search-"));
+		try {
+			const realVault = path.join(tmp, "real-vault");
+			const aliasVault = path.join(tmp, "alias-vault");
+			fs.mkdirSync(path.join(realVault, ".qmd"), { recursive: true });
+			fs.symlinkSync(realVault, aliasVault);
+			fs.writeFileSync(
+				path.join(realVault, ".qmd", "index.yml"),
+				`collections:\n  vault:\n    path: ${aliasVault}\n`
+			);
+
+			const runner = {
+				problem: null,
+				projectDir: realVault,
+				configPath: () => path.join(realVault, ".qmd", "index.yml"),
+			} as unknown as QmdRunner;
+			const config = new QmdConfig(runner, realVault);
+			config.reload();
+			const server = {
+				state: "ready",
+				request: vi.fn(async () => ({
+					results: [{ file: "qmd://vault/Notes/Maxwell.md", line: 3, title: "Maxwell", snippet: "@@ -1,1 @@\nGauss" }],
+				})),
+			} as unknown as QmdServer;
+			const fakeFile = new TFile();
+			fakeFile.path = "Notes/Maxwell.md";
+			const app = { vault: { getFileByPath: (p: string) => (p === "Notes/Maxwell.md" ? fakeFile : null) } } as unknown as App;
+			const search = new QmdSearch(app, runner, server, config, {} as QmdModels, () => DEFAULT_SETTINGS, realVault);
+
+			const outcome = await search.fast("gauss");
+			expect(outcome.results).toHaveLength(1);
+			expect(outcome.results[0].path).toBe("Notes/Maxwell.md");
+			expect(outcome.results[0].file).toBe(fakeFile);
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("isManagedQmdServerCommand (BUG-06)", () => {
+	it("matches qmd mcp --http commands with the recorded port only", () => {
+		expect(isManagedQmdServerCommand("node /Users/me/.nvm/bin/qmd mcp --http --port 8421", 8421)).toBe(true);
+		expect(isManagedQmdServerCommand("qmd mcp --http --port=8422", 8422)).toBe(true);
+		expect(isManagedQmdServerCommand("qmd mcp --http --port 8421", 8422)).toBe(false);
+		expect(isManagedQmdServerCommand("node server.js --port 8421", 8421)).toBe(false);
 	});
 });

@@ -1,6 +1,10 @@
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { editIgnore, editIsSafe, folderPattern, parseCollections, parseModels, patternFolder, withIgnore } from "../src/qmd/config";
+import { editIgnore, editIsSafe, folderPattern, parseCollections, parseModels, patternFolder, QmdConfig, withIgnore } from "../src/qmd/config";
+import type { QmdRunner } from "../src/qmd/runner";
 
 // The shape of a real vault config: hand-written rules, context and models.
 const VAULT = `collections:
@@ -149,5 +153,37 @@ describe("parseModels", () => {
 	});
 	it("is empty without a models block", () => {
 		expect(parseModels("collections: {}\n")).toEqual({});
+	});
+});
+
+describe("QmdConfig symlink resolution and reloadIfChanged", () => {
+	it("matches vault folders across symlinked collection roots and detects external edits", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qmd-cfg-"));
+		try {
+			const realVault = path.join(tmp, "real-vault");
+			const aliasVault = path.join(tmp, "alias-vault");
+			fs.mkdirSync(path.join(realVault, ".qmd"), { recursive: true });
+			fs.mkdirSync(path.join(realVault, "Archive"), { recursive: true });
+			fs.symlinkSync(realVault, aliasVault);
+
+			const yml = path.join(realVault, ".qmd", "index.yml");
+			fs.writeFileSync(yml, `collections:\n  vault:\n    path: ${aliasVault}\n    pattern: "**/*.md"\n`);
+			const runner = { projectDir: realVault, configPath: () => yml } as unknown as QmdRunner;
+			const cfg = new QmdConfig(runner, realVault);
+			cfg.reload();
+
+			expect(cfg.canExclude("Archive")).toBe(true);
+			cfg.exclude("Archive");
+			expect(cfg.isExcluded("Archive")).toBe(true);
+			cfg.include("Archive");
+			expect(cfg.isExcluded("Archive")).toBe(false);
+
+			expect(cfg.reloadIfChanged()).toBe(false);
+			fs.writeFileSync(yml, `collections:\n  vault:\n    path: ${realVault}\n    ignore:\n      - "Archive/**"\n`);
+			expect(cfg.reloadIfChanged()).toBe(true);
+			expect(cfg.folders).toEqual(["Archive"]);
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
 	});
 });
