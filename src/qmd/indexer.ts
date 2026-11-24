@@ -104,6 +104,13 @@ export class QmdIndexer {
 		if (this.child) this.runner.kill(this.child);
 	}
 
+	/** Clear a sticky error once the underlying problem (such as a missing index) has been fixed. */
+	clearError(): void {
+		if (this.state !== 'error') return;
+		this.message = '';
+		this.setState('idle');
+	}
+
 	/** True, with the reason reported, when qmd must not run now. */
 	private blocked(): boolean {
 		if (!this.runner.problem) return false;

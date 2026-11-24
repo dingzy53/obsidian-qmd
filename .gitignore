@@ -4,3 +4,8 @@ main.js
 *.log
 .DS_Store
 data.json
+
+# WebdriverIO E2E
+.obsidian-cache/
+obsidian-versions-lock.txt
+test-vault/.obsidian/

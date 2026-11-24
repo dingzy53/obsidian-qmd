@@ -321,17 +321,18 @@ export class QmdRunner {
 	 * flatpak-spawn forwards SIGINT to the host process group (SIGTERM would only
 	 * reach the launcher and leave the real process running).
 	 */
-	kill(child: ChildProcess): void {
-		if (child.exitCode !== null || child.signalCode !== null) return;
+	kill(child: ChildProcess, signal: NodeJS.Signals = 'SIGINT'): void {
 		if (!this.isFlatpak() && child.pid && process.platform !== 'win32') {
 			try {
-				process.kill(-child.pid, 'SIGINT');
+				process.kill(-child.pid, signal);
 				return;
 			} catch {
-				// not a group leader; fall through
+				// process group may already be gone or child is not a group leader; fall through
 			}
 		}
-		child.kill('SIGINT');
+		if (child.exitCode === null && child.signalCode === null) {
+			child.kill(signal);
+		}
 	}
 
 	async status(): Promise<QmdStatus> {

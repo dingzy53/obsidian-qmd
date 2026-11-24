@@ -1,9 +1,22 @@
-import { ChildProcess } from 'child_process';
+import { ChildProcess, execFile } from 'child_process';
+import * as fs from 'fs';
 import * as http from 'http';
 import { QmdSettings } from '../types';
+import { realPath } from './config';
 import { QmdRunner, stripAnsi } from './runner';
 
 export type ServerState = 'stopped' | 'starting' | 'ready' | 'failed';
+
+export interface ManagedServerRecord {
+	pid: number;
+	port: number;
+	projectDir: string;
+}
+
+export interface ServerStorage {
+	load(): ManagedServerRecord | null;
+	save(record: ManagedServerRecord | null): void;
+}
 
 const PORT_ATTEMPTS = 6;
 const LOG_LINES = 50;
@@ -13,6 +26,58 @@ const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(r
 
 function alive(child: ChildProcess): boolean {
 	return child.exitCode === null && child.signalCode === null;
+}
+
+function pidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function signalPidGroup(pid: number, signal: NodeJS.Signals): boolean {
+	if (process.platform !== 'win32') {
+		try {
+			process.kill(-pid, signal);
+			return true;
+		} catch {
+			// not a group leader; fall through to direct pid
+		}
+	}
+	try {
+		process.kill(pid, signal);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function readPidCommand(pid: number): Promise<string> {
+	if (process.platform === 'linux') {
+		try {
+			return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0+/g, ' ').trim();
+		} catch {
+			return '';
+		}
+	}
+	if (process.platform === 'darwin') {
+		return new Promise<string>((resolve) => {
+			execFile('ps', ['-p', String(pid), '-o', 'command='], { timeout: 1000 }, (err, stdout) => {
+				resolve(err ? '' : stdout.trim());
+			});
+		});
+	}
+	return '';
+}
+
+/** True when a command line belongs to a `qmd mcp --http --port <port>` process we spawned. */
+export function isManagedQmdServerCommand(cmdline: string, port: number): boolean {
+	const normalized = cmdline.toLowerCase();
+	if (!normalized.includes('qmd') || !/\bmcp\b/.test(normalized) || !normalized.includes('--http')) return false;
+	const match = /--port(?:=|\s+)(\d+)/.exec(normalized);
+	return match?.[1] === String(port);
 }
 
 /**
@@ -32,7 +97,11 @@ export class QmdServer {
 	private restartTimer: number | null = null;
 	private listeners = new Set<() => void>();
 
-	constructor(private runner: QmdRunner, private getSettings: () => QmdSettings) {}
+	constructor(
+		private runner: QmdRunner,
+		private getSettings: () => QmdSettings,
+		private storage?: ServerStorage
+	) {}
 
 	onChange(listener: () => void): () => void {
 		this.listeners.add(listener);
@@ -66,12 +135,16 @@ export class QmdServer {
 		this.restartTimer = null;
 		const child = this.child;
 		this.child = null;
-		if (child && alive(child)) {
-			const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-			this.runner.kill(child);
+		if (child) {
+			const exited = new Promise<void>((resolve) => {
+				if (!alive(child)) resolve();
+				else child.once('exit', () => resolve());
+			});
+			this.runner.kill(child, 'SIGINT');
 			await Promise.race([exited, sleep(3000)]);
-			if (alive(child)) child.kill('SIGKILL');
+			this.runner.kill(child, 'SIGKILL');
 		}
+		this.storage?.save(null);
 		await this.launching?.catch(() => undefined);
 		// The server closes its database after the launcher has gone; wait until the port
 		// is really free, so a restart never overlaps with (or mistakes) the old process.
@@ -85,8 +158,30 @@ export class QmdServer {
 		await this.start();
 	}
 
+	private async reapOrphanedServer(): Promise<void> {
+		const record = this.storage?.load();
+		if (!record || !Number.isInteger(record.pid) || record.pid <= 0) return;
+		if (realPath(record.projectDir) !== realPath(this.runner.projectDir)) return;
+		if (!pidAlive(record.pid)) {
+			this.storage?.save(null);
+			return;
+		}
+		const cmd = await readPidCommand(record.pid);
+		if (!isManagedQmdServerCommand(cmd, record.port)) {
+			this.storage?.save(null);
+			return;
+		}
+		this.note(`reaping orphaned qmd server (pid ${record.pid}, port ${record.port})`);
+		signalPidGroup(record.pid, 'SIGINT');
+		for (let i = 0; i < 12 && pidAlive(record.pid); i++) await sleep(125);
+		if (pidAlive(record.pid)) signalPidGroup(record.pid, 'SIGKILL');
+		for (let i = 0; i < 16 && (await this.healthy(record.port)); i++) await sleep(125);
+		this.storage?.save(null);
+	}
+
 	private async launch(): Promise<void> {
 		this.setState('starting');
+		await this.reapOrphanedServer();
 		const base = this.getSettings().serverPort;
 		for (let port = base; port < base + PORT_ATTEMPTS && this.wanted; port++) {
 			// Never adopt a server we did not start: it may be serving a different index.
@@ -110,6 +205,9 @@ export class QmdServer {
 			return 'failed';
 		}
 		this.child = child;
+		if (child.pid && !this.runner.isFlatpak()) {
+			this.storage?.save({ pid: child.pid, port, projectDir: realPath(this.runner.projectDir) });
+		}
 		let portBusy = false;
 		// The server logs every request; the pipes must be read or they fill up and block it.
 		const drain = (data: Buffer) => {
@@ -137,7 +235,8 @@ export class QmdServer {
 			await sleep(250);
 		}
 		// Also covers stop() racing the spawn above, when it could not see this child yet.
-		this.runner.kill(child);
+		this.runner.kill(child, 'SIGKILL');
+		this.storage?.save(null);
 		if (this.child === child) this.child = null;
 		if (!this.wanted) return 'stopped';
 		return portBusy ? 'busy' : 'failed';
@@ -146,6 +245,7 @@ export class QmdServer {
 	private onExit(child: ChildProcess, code: number | null, signal: string | null): void {
 		if (this.child !== child) return;
 		this.child = null;
+		this.storage?.save(null);
 		if (this.state !== 'ready' || !this.wanted) return;
 
 		this.note(`server exited (${signal ?? code})`);

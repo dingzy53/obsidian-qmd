@@ -99,7 +99,7 @@ export class QmdSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Purge removed notes',
-						desc: 'Deletes the text and vectors of notes no longer indexed. The server restarts. Including them again means embedding them again.',
+						desc: 'Deletes text and vectors of unindexed notes and restarts the server.',
 						render: (setting) => this.renderPurge(setting),
 					},
 					{
@@ -145,8 +145,6 @@ export class QmdSettingTab extends PluginSettingTab {
 						control: {
 							type: 'number',
 							key: 'serverPort',
-							min: 1024,
-							max: 65530,
 							step: 1,
 							validate: (port) =>
 								Number.isInteger(port) && port >= 1024 && port <= 65530 ? undefined : 'Use a port from 1024 to 65530.',
@@ -176,7 +174,7 @@ export class QmdSettingTab extends PluginSettingTab {
 							min: 0,
 							max: 5000,
 							step: 250,
-							displayFormat: (ms) => `${ms / 1000} s`,
+							displayFormat: (ms) => `${ms / 1000}s`,
 						},
 					},
 					{
@@ -251,7 +249,14 @@ export class QmdSettingTab extends PluginSettingTab {
 		setting.addButton((btn) =>
 			btn.setButtonText('Update now').onClick(async () => {
 				btn.setDisabled(true).setButtonText('Updating…');
+				if (plugin.runner.problem) {
+					await plugin.runner.verify();
+					if (!plugin.runner.problem) plugin.indexer.clearError();
+					plugin.refreshStatus();
+					if (!plugin.runner.problem) void plugin.server.start();
+				}
 				await plugin.indexer.run();
+				plugin.search.invalidate();
 				btn.setDisabled(false).setButtonText('Update now');
 				describe();
 			})
@@ -336,7 +341,7 @@ export class QmdSettingTab extends PluginSettingTab {
 		setting.addButton((btn) =>
 			btn.setButtonText('Restart').onClick(async () => {
 				btn.setDisabled(true);
-				await server.restart();
+				await this.plugin.restartServer();
 				btn.setDisabled(false);
 			})
 		);

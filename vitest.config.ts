@@ -5,6 +5,7 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["test/**/*.test.ts"],
+		exclude: ["test/e2e/**", ".obsidian-cache/**", "node_modules/**"],
 	},
 	resolve: {
 		// The `obsidian` package ships types only; tests get a minimal runtime stub.

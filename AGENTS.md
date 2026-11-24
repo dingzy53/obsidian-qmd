@@ -126,3 +126,30 @@ Checked against the developer docs (obsidian-developer-docs, October 2026).
     - The clipboard is write-only (*Copy link*, and the insert-link fallback in `ui/result-list.ts`). Removing those two calls would clear the recommendation.
   - Do not add more of these modules without a matching disclosure.
 - **CSS lint** warns on `!important` and on unknown type selectors such as `mjx-container`. MathJax display math sets no inline styles. Its rule is `mjx-container[display]`, so override it by specificity with the `.MathJax` class (`.qmd-row-snippet .MathJax[display='true']`).
+
+## Cross-Platform E2E Testing
+
+### Installation
+
+No global `wdio` installation is required; WebdriverIO and `wdio-obsidian-service` live in `devDependencies`.
+
+```bash
+npm ci
+```
+
+- The first E2E run automatically downloads and caches Obsidian binaries into `.obsidian-cache/`.
+- Optional: set `OBSIDIAN_CACHE_DIR=/path/to/shared-cache` to reuse a single Obsidian binary cache across repositories.
+- On headless Linux, run E2E commands under `xvfb-run` (macOS and Windows run directly).
+
+### Testing SOP
+
+1. **On every change** (in `test/e2e/` and `src/`):
+```bash
+npm run build
+npm run check:mobile
+npm run lint
+npm test
+npm run test:e2e:fast    # Desktop latest Obsidian against test-vault/
+```
+2. **Before PR or release**:
+   - Run `npm run test:e2e` (tests `earliest/earliest` + `latest/latest` Obsidian versions) or push to run `.github/workflows/e2e.yml` (Linux/Windows/macOS desktop).

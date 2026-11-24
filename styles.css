@@ -260,6 +260,8 @@
    Quick-search modal
    -------------------------------------------------------------------------- */
 .modal.qmd-modal {
+	align-self: flex-start;
+	margin-top: 9vh;
 	width: min(760px, 92vw);
 	max-height: 82vh;
 	padding: 0;
